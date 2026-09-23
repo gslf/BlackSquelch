@@ -117,10 +117,8 @@ bool bs_config_path(char *buffer, size_t cap) {
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <errno.h>
 static struct termios original;
-static int original_flags;
 static bool terminal_active;
 double bs_time(void) {
     struct timespec t;
@@ -140,12 +138,10 @@ bool bs_terminal_open(void) {
     raw.c_iflag &= (tcflag_t) ~(IXON | ICRNL);
     raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 0;
-    original_flags = fcntl(STDIN_FILENO, F_GETFL);
-    if (original_flags < 0 || tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)) {
-        return false;
-    }
-    if (fcntl(STDIN_FILENO, F_SETFL, original_flags | O_NONBLOCK) < 0) {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
+    /* VMIN/VTIME 0 already make read() non-blocking. O_NONBLOCK would also apply to
+       stdout, which shares the terminal's open file description, and macOS's small
+       pty buffer then rejects screen repaints with EAGAIN. */
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)) {
         return false;
     }
     signal(SIGINT, on_signal);
@@ -162,7 +158,6 @@ void bs_terminal_close(void) {
     printf("\033[?25h\033[?1049l");
     fflush(stdout);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
-    fcntl(STDIN_FILENO, F_SETFL, original_flags);
     terminal_active = false;
 }
 int bs_key(void) {
