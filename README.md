@@ -15,40 +15,75 @@ PTT manually.
 ## Build and run
 
 CMake is the build system on every platform. Requirements: GCC or Clang with C11
-support, CMake 3.20 or newer, and Ninja (or another CMake generator). Python 3 is
-optional and enables the Linux terminal integration test. Audio sources are already
-vendored; configuring and building do not download dependencies.
+support, CMake 3.20 or newer, and Make.
+Python 3 is optional and enables the Linux terminal integration test. Audio sources
+are already vendored; configuring and building do not download dependencies.
 
-### Linux and macOS
+### Linux
 
-With the compiler, CMake and Ninja installed:
+Install the compiler, C library development headers, CMake and Make using the
+command for your distribution:
+
+| Distribution | Install build tools |
+| --- | --- |
+| Debian / Ubuntu | `sudo apt update` followed by `sudo apt install build-essential cmake` |
+| Fedora | `sudo dnf install gcc glibc-devel make cmake` |
+| Arch Linux | `sudo pacman -S --needed base-devel cmake` |
+
+From the project directory:
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/blacksquelch
 ```
 
-On macOS, Apple's command-line tools provide Clang and the system SDK. Allow
-microphone access for the terminal that launches BlackSquelch. Linux uses the
-running PulseAudio service (including PipeWire's PulseAudio service), or ALSA when
-PulseAudio cannot initialize. The OS audio runtime must be installed; no audio
-library development package is required.
+Linux uses the running PulseAudio service (including PipeWire's PulseAudio
+service), or ALSA when PulseAudio cannot initialize. The OS audio runtime must be
+installed; no audio library development package is required.
+
+### macOS
+
+Apple's command-line tools provide Clang, Make and the system SDK. Install them
+with `xcode-select --install` if needed, then install CMake 3.20 or newer. Use the
+same `Unix Makefiles` build commands shown above. Allow microphone access for the
+terminal that launches BlackSquelch.
+
+### Missing build tool or stale CMake cache
+
+`CMAKE_MAKE_PROGRAM is not set` means CMake cannot find the selected build tool.
+For these instructions, `make --version` must work in the build terminal. On Linux,
+install the prerequisites above. If a previous configuration failed or used a
+different generator, use a fresh build directory:
+
+```sh
+cmake -S . -B build/make -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build/make --parallel
+ctest --test-dir build/make --output-on-failure
+./build/make/blacksquelch
+```
+
+The separate directory avoids reusing a cached generator or executable path.
+Copy source files between machines, not generated build directories or
+`CMakeCache.txt`; those files contain machine-specific paths.
 
 ### Windows: MinGW-w64
 
-Install [MSYS2](https://www.msys2.org/) and open its **UCRT64** terminal. Install
-these open-source build tools:
+Install the official [CMake Windows x64 package](https://cmake.org/download/)
+and [MSYS2](https://www.msys2.org/). Open the **UCRT64** terminal and install GCC
+and Make:
 
 ```sh
-pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc make
 ```
 
-From the project directory in that same terminal:
+From the project directory in that same terminal, add CMake to the path and build
+(adjust the path if CMake was installed elsewhere):
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+export PATH="/c/Program Files/CMake/bin:$PATH"
+cmake -S . -B build -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/blacksquelch.exe

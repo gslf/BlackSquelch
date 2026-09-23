@@ -2,13 +2,18 @@
 
 ## Automated suites
 
-Build and run on every platform with CMake and CTest:
+Install the platform prerequisites in the [build guide](../README.md#build-and-run)
+first. On Linux/macOS, build with Make and run CTest:
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
+
+On Windows, use the MSYS2 UCRT64 setup in the build guide and replace
+`-G "Unix Makefiles"` with `-G "MSYS Makefiles"`. Use a separate build directory
+when changing generators or moving to another machine.
 
 Tests require no physical audio devices. Audio integration tests explicitly select
 a miniaudio null backend that is not compiled into the production application.
@@ -68,7 +73,7 @@ directory and does not modify normal user preferences.
 ## Sanitizers and compiler checks
 
 ```sh
-cmake -S . -B build/asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBS_SANITIZE=ON
+cmake -S . -B build/asan -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug -DBS_SANITIZE=ON
 cmake --build build/asan --parallel
 ctest --test-dir build/asan --output-on-failure
 ```

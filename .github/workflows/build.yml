@@ -8,10 +8,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
-      - run: cmake -S . -B build/asan -DCMAKE_BUILD_TYPE=Debug -DBS_SANITIZE=ON
+      - run: cmake -S . -B build/asan -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug -DBS_SANITIZE=ON
       - run: cmake --build build/asan --parallel
       - run: ctest --test-dir build/asan --output-on-failure
   windows:
@@ -22,13 +22,14 @@ jobs:
         with:
           msystem: UCRT64
           update: true
+          # Use the official CMake already installed on the Windows runner.
+          path-type: inherit
           install: >-
             mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
+            make
       - name: Build and test with MinGW-w64 GCC
         shell: msys2 {0}
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure
