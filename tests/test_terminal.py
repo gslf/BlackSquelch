@@ -35,6 +35,16 @@ try:
                 if select.select([master], [], [], 0.02)[0]:
                     output.extend(os.read(master, 65536))
 
+        def wait_for_exit():
+            # LeakSanitizer shutdown on ARM64 runners can exceed two seconds.
+            # Keep draining the PTY so diagnostics cannot block process exit.
+            deadline = time.monotonic() + 15
+            while process.poll() is None and time.monotonic() < deadline:
+                read_for(0.05)
+            status = process.wait(timeout=0.1)
+            read_for(0.05)
+            assert status == 0, output.decode("utf-8", errors="replace")
+
         for _ in range(40):
             read_for(0.1)
             if b"First run" in output:
@@ -101,7 +111,7 @@ try:
         assert b"BlackSquelch" in output and output.count(b"C-x") == 1
         os.write(master, b"\x18q")
         read_for(0.15)
-        assert process.wait(timeout=2) == 0
+        wait_for_exit()
         assert termios.tcgetattr(slave) == original
         assert b"\x1b[?1049l" in output
         assert b"ERROR: AddressSanitizer" not in output
@@ -124,7 +134,8 @@ try:
         assert b"HELLO_" in output and b"Macro 1 inserted" in output
         os.write(master, b"\x18q")
         read_for(0.15)
-        assert process.wait(timeout=2) == 0 and termios.tcgetattr(slave) == original
+        wait_for_exit()
+        assert termios.tcgetattr(slave) == original
         print("PASS terminal: settings, menus, incremental redraw, macro editing/shortcut/persistence, resize and restoration")
 finally:
     if process and process.poll() is None:
