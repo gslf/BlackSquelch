@@ -43,9 +43,9 @@ jobs:
           CHROMIUM: google-chrome
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          node tests/test_web_audio.mjs
-          node tests/test_web_wasm.mjs build/wasm/web build/blacksquelch
-          node tests/test_web_browser.mjs build/wasm/web
+          "$EMSDK_NODE" tests/test_web_audio.mjs
+          "$EMSDK_NODE" tests/test_web_wasm.mjs build/wasm/web build/blacksquelch
+          "$EMSDK_NODE" tests/test_web_browser.mjs build/wasm/web
       - name: Package static PWA
         run: python scripts/package-web.py build/wasm/web --output-dir dist
       - uses: actions/upload-artifact@v7.0.2

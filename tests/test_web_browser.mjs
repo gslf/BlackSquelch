@@ -57,7 +57,7 @@ try {
   }`});
   await page.call('Emulation.setDeviceMetricsOverride',{width:1360,height:1000,deviceScaleFactor:1,mobile:false});
   await page.call('Page.navigate',{url:origin+'/'});
-  await page.wait('!document.getElementById("audio-toggle").disabled');
+  await page.wait('document.getElementById("audio-toggle")?.disabled === false');
   await page.wait('navigator.serviceWorker.controller !== null');
   await page.wait('!document.getElementById("install").hidden');
   assert.equal(await page.evaluate('document.querySelectorAll("script[src^=http],link[href^=http]").length'),0);
@@ -163,7 +163,12 @@ try {
   assert.equal(page.events.filter(event=>event.method==='Runtime.exceptionThrown').length,0,JSON.stringify(page.events.filter(event=>event.method==='Runtime.exceptionThrown')));
   console.log('PASS browser: live audio, PTT completion, history, macros, binary upload/download, persistent received files, mobile, offline and install visibility.');
 } catch(error) {
-  if(page){try {console.error(await page.evaluate('document.body.innerText'));} catch{}}
+  if(page){try {
+    console.error(await page.evaluate('document.body.innerText'));
+    const {data}=await page.call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
+    fs.writeFileSync(path.join(screenshots,'failure.png'),Buffer.from(data,'base64'));
+    fs.writeFileSync(path.join(screenshots,'events.json'),JSON.stringify(page.events,null,2));
+  } catch{}}
   throw error;
 } finally {
   page?.close(); controller?.close();
