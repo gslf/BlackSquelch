@@ -85,9 +85,5 @@ Upload the generated folder to any HTTPS static host, including a subdirectory.
 The server must serve `.wasm` as `application/wasm` and JavaScript as JavaScript.
 No special cross-origin isolation headers are required.
 
-## GitHub Pages
-
-In repository Settings → Pages, choose GitHub Actions as the source. Then run
-Actions → Publish browser app. Build and browser tests run before
-publication. Regular pushes produce a downloadable artifact without deploying.
-Releases also include the static PWA ZIP and its checksum.
+Regular pushes produce a downloadable artifact. Releases also include the static
+PWA ZIP and its checksum. These workflows do not deploy a website.
