@@ -24,8 +24,25 @@ Optional Linux integration tests require Python 3.
 | `terminal` | Real keyboard input, redraws, macro persistence and terminal restoration |
 | `file_cli` | TXT, PNG and binary roundtrips through both profiles |
 
-All nine pass locally with GCC Release and Clang ASan/UBSan.
-New code has not been run locally on Windows or macOS.
+GitHub Actions runs native builds on Linux and macOS (x86_64 and ARM64), and Windows x64.
+Release builds must pass before publication. Physical radio checks remain separate.
+
+## Release packages
+
+```sh
+python3 tests/test_release.py
+python3 scripts/package-release.py --build-dir build --platform linux --arch x86_64
+python3 tests/test_install.py build/dist/blacksquelch-linux-x86_64.tar.gz
+```
+
+Use the matching platform and architecture when packaging. Windows also needs
+`--runtime-dir` pointing to the MinGW `bin` folder, then runs `tests/test_install.ps1`
+with `-Archive` pointing to the ZIP.
+
+Tests cover version validation, architecture detection, complete release assets,
+runtime DLL dependencies, installation, updates and removal. They also test
+automatic downloads and checksum rejection without a network. Windows checks rollback
+after a failed update and runs the installed executable without MinGW on PATH.
 
 ## Memory checks
 

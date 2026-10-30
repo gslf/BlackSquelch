@@ -16,6 +16,7 @@ static void usage(void) {
          "  blacksquelch --decode FILE --output-dir DIRECTORY\n"
          "  MFSK8 and MFSK16 use 25 baud, FEC and interleaving; default is 8 tones.\n"
          "  blacksquelch --help\n"
+         "  blacksquelch --version\n"
          "Callsigns contain exactly 6 ASCII letters/digits. TX defaults to 8 tones.\n"
          "RX always detects 8 or 16 tones from training. Quote text containing spaces. Text is "
          "1-512 characters from the fixed alphabet. Files: any format, max 1 MiB.\n"
@@ -101,6 +102,10 @@ int main(int argc, char **argv) {
     }
     if (argc == 2 && !strcmp(argv[1], "--help")) {
         usage();
+        return 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--version")) {
+        printf("BlackSquelch %s\n", BS_VERSION);
         return 0;
     }
     if (argc == 2 && !strcmp(argv[1], "--devices")) {

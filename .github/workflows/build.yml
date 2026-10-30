@@ -1,23 +1,41 @@
 name: Native builds and offline tests
 on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
 jobs:
   posix:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - {os: ubuntu-22.04, platform: linux, arch: x86_64}
+          - {os: ubuntu-22.04-arm, platform: linux, arch: arm64}
+          - {os: macos-15-intel, platform: macos, arch: x86_64}
+          - {os: macos-15, platform: macos, arch: arm64}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python tests/test_release.py
       - run: cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
       - run: cmake -S . -B build/asan -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug -DBS_SANITIZE=ON
       - run: cmake --build build/asan --parallel
       - run: ctest --test-dir build/asan --output-on-failure
+      - name: Package and test installation
+        run: |
+          python scripts/package-release.py --build-dir build --output-dir dist --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}'
+          python tests/test_install.py dist/*.tar.gz
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python tests/test_release.py
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -33,3 +51,10 @@ jobs:
           cmake -S . -B build -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure
+          printf 'MINGW_BIN=%s\n' "$(cygpath -w "$MINGW_PREFIX/bin")" >> "$GITHUB_ENV"
+      - name: Package and test installation
+        shell: pwsh
+        run: |
+          python scripts/package-release.py --build-dir build --output-dir dist --platform windows --arch x86_64 --runtime-dir "$env:MINGW_BIN"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed.' }
+          ./tests/test_install.ps1 -Archive dist/blacksquelch-windows-x86_64.zip

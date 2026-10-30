@@ -3,6 +3,54 @@
 Send text and files through an analog radio using a computer microphone and speaker.
 PTT is manual. Choose 8 or 16 transmit tones; reception detects both automatically.
 
+## Install
+
+Use the [latest release](https://github.com/gslf/BlackSquelch/releases/latest).
+No compiler is needed. Packages cover Linux and macOS (Intel or ARM64), and Windows x64.
+
+Linux / macOS:
+
+```sh
+curl -fL https://github.com/gslf/BlackSquelch/releases/latest/download/install-release.sh -o install-release.sh
+sh install-release.sh
+~/.local/bin/blacksquelch
+```
+
+Windows, in PowerShell:
+
+```powershell
+Invoke-WebRequest https://github.com/gslf/BlackSquelch/releases/latest/download/install-release.ps1 -OutFile install-release.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-release.ps1
+& "$env:LOCALAPPDATA\Programs\BlackSquelch\bin\blacksquelch.exe"
+```
+
+The scripts select the right package and verify its SHA-256 checksum. No administrator
+access is needed. Run the same commands to update; close the app first.
+Use `--version v1.0.0` on Linux/macOS or `-Version v1.0.0` on Windows to select a release.
+Custom locations use `--prefix DIRECTORY` or `-InstallDir DIRECTORY`.
+
+For offline installation, download and extract the matching archive from the release,
+then run `sh blacksquelch/install.sh` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\blacksquelch\install.ps1`.
+You can also run the executable directly from its `bin` folder.
+
+Linux needs glibc 2.35+ and a working PulseAudio or ALSA setup. macOS needs version
+13+; packages are not notarized, so macOS may ask you to allow them in Privacy & Security.
+Windows needs Windows 10/11 x64; runtime DLLs are included.
+
+To uninstall:
+
+```sh
+sh ~/.local/share/blacksquelch/uninstall.sh
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\BlackSquelch\uninstall.ps1"
+```
+
+For a custom location, run its installed uninstall script. Preferences, macros and
+received files are kept.
+
 ## Build
 
 Requires GCC or Clang, CMake 3.20+, and Make. Audio dependencies are included.
@@ -149,4 +197,5 @@ WAV files are not needed for live transfers. TX accepts only 8 or 16 tones;
 the old two-tone mode and `--rate` option are removed.
 
 [Protocol](docs/protocol.md) · [Architecture](docs/architecture.md) ·
-[Tests](docs/testing.md) · [Audio library](third_party/miniaudio/README.md)
+[Tests](docs/testing.md) · [Releases](docs/releases.md) ·
+[Audio library](third_party/miniaudio/README.md)
