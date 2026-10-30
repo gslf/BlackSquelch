@@ -50,7 +50,7 @@ void bs_event_format(const BsEvent *e, char *out, size_t cap) {
     if (e->field == BS_CALL || e->field == BS_TEXT) {
         snprintf(index, sizeof index, " [%zu/%zu]", e->index + 1, e->expected);
     }
-    snprintf(out, cap, "RX %u bit/s bit=%zu %s%s %s%s%s q=%.2f %s", e->bit_rate, e->position,
+    snprintf(out, cap, "RX MFSK%u bit=%zu %s%s %s%s%s q=%.2f %s", e->tones, e->position,
              bs_field_name(e->field), index, e->bits, decoded, e->uncertain ? " ? UNCERTAIN" : "",
              e->confidence,
              e->field == BS_PREAMBLE && e->kind == BS_PROGRESS ? "UNSYNCHRONIZED" : "PROVISIONAL");
@@ -60,11 +60,12 @@ void bs_log_event(void *context, const BsEvent *e) {
     char line[BS_LOG_WIDTH];
     memcpy(l->call, e->call, sizeof l->call);
     memcpy(l->text, e->text, sizeof l->text);
-    if (e->kind == BS_RATE_DETECTED) {
+    if (e->kind == BS_MODE_DETECTED) {
         snprintf(line, sizeof line,
-                 "RX RATE LOCKED: %u bit/s, measured symbol %.3f ms, confidence %.2f", e->bit_rate,
-                 e->symbol_ms, e->confidence);
+                 "RX MFSK%u LOCKED: 25 symbols/s; FEC, interleaving, calibrated tones", e->tones);
         bs_log_add(l, line);
+        snprintf(l->current, sizeof l->current,
+                 "RX MFSK%u: receiving protected packet; correcting before delivery...", e->tones);
     } else if (e->kind == BS_PROGRESS) {
         char formatted[BS_LOG_WIDTH], timestamp[16];
         bs_event_format(e, formatted, sizeof formatted);
@@ -82,6 +83,29 @@ void bs_log_event(void *context, const BsEvent *e) {
         l->current[0] = 0;
         bs_log_add(l, "RX LISTENING: ready for a new preamble");
     } else {
+        if (!e->position && (e->kind == BS_INVALID || e->kind == BS_INTERRUPTED)) {
+            snprintf(line, sizeof line, "RX MFSK%u: %s", e->tones, e->detail);
+            bs_log_add(l, line);
+            l->current[0] = 0;
+            return;
+        }
+        if (e->is_repair) {
+            snprintf(line, sizeof line, "RX FILE REPORT %s: %s -> %s, transfer %08X, base %u%s",
+                     e->detail, e->call, e->repair.target, (unsigned)e->repair.id,
+                     (unsigned)e->repair.base,
+                     e->repair.complete ? " COMPLETE" : " MISSING BLOCKS");
+            bs_log_add(l, line);
+            l->current[0] = 0;
+            return;
+        }
+        if (e->is_file) {
+            snprintf(line, sizeof line, "RX FILE %s: %s | block %u/%zu | %s", e->detail,
+                     e->file.name, (unsigned)e->file.index + 1, bs_file_chunk_count(e->file.size),
+                     e->call);
+            bs_log_add(l, line);
+            l->current[0] = 0;
+            return;
+        }
         snprintf(line, sizeof line, "RX %s; last group %s; complete text characters=%zu", e->detail,
                  e->bits, strlen(e->text));
         bs_log_add(l, line);

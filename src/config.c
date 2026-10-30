@@ -17,11 +17,11 @@ static bool valid_device(const char *id, size_t capacity) {
     return length > 0 && length < capacity;
 }
 static bool valid_config(BsConfig *config) {
+    config->tones = bs_tones_effective(config->tones);
     return config->call[BS_CALL_CHARS] == 0 && bs_normalize(config->call, true, NULL) &&
            valid_device(config->input, sizeof config->input) &&
            valid_device(config->output, sizeof config->output) && isfinite(config->amplitude) &&
-           config->amplitude >= 0.01 && config->amplitude <= 1 &&
-           bs_bit_rate_valid(config->bit_rate);
+           config->amplitude >= 0.01 && config->amplitude <= 1 && bs_tones_valid(config->tones);
 }
 bool bs_config_load(const char *path, BsConfig *config) {
     FILE *file = fopen(path, "r");
@@ -30,7 +30,7 @@ bool bs_config_load(const char *path, BsConfig *config) {
     }
     BsConfig candidate = {0};
     char line[512];
-    const char *keys[] = {"schema", "callsign", "input", "output", "amplitude", "bit_rate"};
+    const char *keys[] = {"schema", "callsign", "input", "output", "amplitude", "tones"};
     unsigned seen = 0;
     bool valid = true;
     while (valid && fgets(line, sizeof line, file)) {
@@ -55,7 +55,7 @@ bool bs_config_load(const char *path, BsConfig *config) {
         }
         seen |= 1u << field;
         if (field == 0) {
-            valid = !strcmp(value, "1");
+            valid = !strcmp(value, "2");
         } else if (field <= 3) {
             char *target = field == 1   ? candidate.call
                            : field == 2 ? candidate.input
@@ -71,9 +71,9 @@ bool bs_config_load(const char *path, BsConfig *config) {
             candidate.amplitude = strtod(value, &end);
             valid = end != value && *end == 0;
         } else {
-            valid = !strcmp(value, "10") || !strcmp(value, "25") || !strcmp(value, "50");
+            valid = !strcmp(value, "8") || !strcmp(value, "16");
             if (valid) {
-                candidate.bit_rate = (unsigned)strtoul(value, NULL, 10);
+                candidate.tones = (unsigned)strtoul(value, NULL, 10);
             }
         }
     }
@@ -99,9 +99,9 @@ bool bs_config_save(const char *path, const BsConfig *config) {
         return false;
     }
     bool ok =
-        fprintf(file, "schema=1\ncallsign=%s\ninput=%s\noutput=%s\namplitude=%.6f\nbit_rate=%u\n",
+        fprintf(file, "schema=2\ncallsign=%s\ninput=%s\noutput=%s\namplitude=%.6f\ntones=%u\n",
                 normalized.call, normalized.input, normalized.output, normalized.amplitude,
-                normalized.bit_rate) > 0;
+                normalized.tones) > 0;
     if (fclose(file)) {
         ok = false;
     }

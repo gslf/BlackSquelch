@@ -72,6 +72,8 @@ int bs_key(void) {
     if (!c || c == 224) {
         c = _getch();
         switch (c) {
+        case 15:
+            return BS_KEY_BACK_TAB;
         case 72:
             return BS_KEY_UP;
         case 80:
@@ -205,6 +207,9 @@ int bs_key(void) {
     }
     if (c == 'F') {
         return BS_KEY_END;
+    }
+    if (c == 'Z') {
+        return BS_KEY_BACK_TAB;
     }
     if (c == '~') {
         if (number == 5) {

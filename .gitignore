@@ -1,3 +1,4 @@
 /build/
 *.wav
 blacksquelch-log-*.txt
+received-files/

@@ -1,36 +1,15 @@
 # BlackSquelch
 
-```text
-+++++++++++++++++
-\--- BlackSquelch
-:#/ GSLF
-+++++++++++++++++
-```
+Send text and files through an analog radio using a computer microphone and speaker.
+PTT is manual. Choose 8 or 16 transmit tones; reception detects both automatically.
 
-BlackSquelch is a C11 terminal application that sends short text messages as slow
-AFSK tones through an analog handheld radio. Connect the computer microphone and
-speaker acoustically to the radio, select the audio devices, and operate the radio's
-PTT manually.
+## Build
 
-## Build and run
+Requires GCC or Clang, CMake 3.20+, and Make. Audio dependencies are included.
+Python 3 enables the optional Linux integration tests.
 
-CMake is the build system on every platform. Requirements: GCC or Clang with C11
-support, CMake 3.20 or newer, and Make.
-Python 3 is optional and enables the Linux terminal integration test. Audio sources
-are already vendored; configuring and building do not download dependencies.
-
-### Linux
-
-Install the compiler, C library development headers, CMake and Make using the
-command for your distribution:
-
-| Distribution | Install build tools |
-| --- | --- |
-| Debian / Ubuntu | `sudo apt update` followed by `sudo apt install build-essential cmake` |
-| Fedora | `sudo dnf install gcc glibc-devel make cmake` |
-| Arch Linux | `sudo pacman -S --needed base-devel cmake` |
-
-From the project directory:
+On Linux, install your distribution's C build tools. On macOS, install Apple's
+command-line tools and CMake. Then run:
 
 ```sh
 cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
@@ -39,217 +18,135 @@ ctest --test-dir build --output-on-failure
 ./build/blacksquelch
 ```
 
-Linux uses the running PulseAudio service (including PipeWire's PulseAudio
-service), or ALSA when PulseAudio cannot initialize. The OS audio runtime must be
-installed; no audio library development package is required.
-
-### macOS
-
-Apple's command-line tools provide Clang, Make and the system SDK. Install them
-with `xcode-select --install` if needed, then install CMake 3.20 or newer. Use the
-same `Unix Makefiles` build commands shown above. Allow microphone access for the
-terminal that launches BlackSquelch.
-
-### Missing build tool or stale CMake cache
-
-`CMAKE_MAKE_PROGRAM is not set` means CMake cannot find the selected build tool.
-For these instructions, `make --version` must work in the build terminal. On Linux,
-install the prerequisites above. If a previous configuration failed or used a
-different generator, use a fresh build directory:
-
-```sh
-cmake -S . -B build/make -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build/make --parallel
-ctest --test-dir build/make --output-on-failure
-./build/make/blacksquelch
-```
-
-The separate directory avoids reusing a cached generator or executable path.
-Copy source files between machines, not generated build directories or
-`CMakeCache.txt`; those files contain machine-specific paths.
-
-### Windows: MinGW-w64
-
-Install the official [CMake Windows x64 package](https://cmake.org/download/)
-and [MSYS2](https://www.msys2.org/). Open the **UCRT64** terminal and install GCC
-and Make:
+On Windows, use [MSYS2 UCRT64](https://www.msys2.org/) with CMake on PATH:
 
 ```sh
 pacman -S --needed mingw-w64-ucrt-x86_64-gcc make
-```
-
-From the project directory in that same terminal, add CMake to the path and build
-(adjust the path if CMake was installed elsewhere):
-
-```sh
-export PATH="/c/Program Files/CMake/bin:$PATH"
 cmake -S . -B build -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/blacksquelch.exe
 ```
 
-Use the UCRT64 tools, not MSYS-targeted `/usr/bin/gcc`. The executable uses WASAPI
-and an ANSI-capable console, such as Windows Terminal. The Windows CI job builds
-and tests with MinGW-w64 GCC. No Visual Studio tooling is used.
+Restart the app after rebuilding. With CMake 3.24+, add `--fresh` to the configure
+command if an old cache points to missing tools. Run the executable in the build
+directory you just updated.
 
-### Audio library
+## First run
 
-[miniaudio 0.11.25](https://github.com/mackron/miniaudio/tree/0.11.25) provides device
-enumeration, capture, playback and format conversion on all three platforms. It is
-vendored under the MIT No Attribution license and needs no other application
-library. It still uses OS audio services and the C runtime. The single header is
-about 4.1 MB of source; codecs, the engine, resource manager, node graph and signal
-generators are disabled. See [vendor provenance and checksums](third_party/miniaudio/README.md).
+Enter a six-character callsign, select the microphone and speaker, and choose
+8 or 16 TX tones. Tab moves between fields; Shift+Tab moves back. Up/Down changes
+values. Enter saves. Allow microphone access if the OS asks.
 
-The modem consumes 48 kHz mono signed 16-bit samples. Capture conversion is handled
-by miniaudio. Playback accepts native channel/sample formats, but requires a 48 kHz
-stream and readable backend timing. The app converts mono into that native format
-without allocating in its audio callbacks. System latency is accounted for before
-the release-PTT instruction; a queued final sample is not completion.
+The default is 8 tones and 50% output level. RX needs no tone setting.
+Use `--devices` to list audio devices.
 
-Use `./build/blacksquelch --devices` to list device names and stable backend-scoped
-identifiers. `default` explicitly selects the system default. A missing stored
-device requires selection in settings; the app does not silently substitute one.
+## Send a message
 
-## Terminal interface
+1. Type the message and press Enter to prepare it.
+2. Check the displayed duration.
+3. Hold the radio PTT, then press Space.
+4. Keep PTT held until the app tells you to release it.
 
-The screen separates recent messages, the live receive log, the text composer,
-and PTT instructions. Only changed rows are redrawn; idle receive text stays in place
-while meters or composition update. The C-x hint appears once, in the footer.
-Muted diagnostics stay below the message flow. The insertion
-end remains visible when text wraps. `NO_COLOR=1` disables colors; all state is also
-represented in text. Small terminals use a compact layout.
+Esc cancels. Ctrl+C quits. Completion means local audio finished, not remote receipt.
 
-**Press Ctrl+X, release it, then press a letter.** The notation below is `C-x`.
-It opens a modal listing each currently available command and its description.
-Unavailable actions are omitted. Press Esc, C-g (Ctrl+G), or C-x again to close it.
-Up/Down scroll the list when it cannot fit. Reception, audio service and countdowns
-continue while the menu is open. Menu letters never enter the composition.
+Text accepts 1–512 characters: letters, digits, spaces, and `.,?!:;-/()`.
+Lowercase becomes uppercase.
 
-| Sequence | Action |
-| --- | --- |
-| C-x s | Prepare the composed message |
-| C-x r | Prepare the last message again |
-| C-x b | Cycle TX rate: 10, 25, 50 bit/s |
-| C-x o | Open settings |
-| C-x a | Explicitly abort the current local reception |
-| C-x e | Export the retained session log |
-| C-x u | Clear composition |
-| C-x p / C-x n | Scroll log back / forward |
-| C-x f | Follow the live log |
-| C-x d | Refresh audio devices while in settings |
-| C-x c | Cancel preparation, countdown, playback or settings |
-| C-x q | Quit and stop audio |
+After a successful text transmission, the composer clears. Up/Down recalls the
+last 32 sent texts from this session. Down past the newest restores your draft.
+Interrupted transmissions keep their text. History is not saved on exit.
 
-Enter prepares text directly. Space starts the countdown after preparation.
-Outside the command modal, Esc or C-g cancels the current operation; during
-playback it interrupts transmission. Ctrl+C also exits. Backspace removes the last
-byte. These controls and the C-x menu are the complete keyboard interface.
+## Menu
 
-## First run and settings
+Press Ctrl+X, release it, then choose an action. This is written as `C-x` below.
+Use Up/Down and Enter, or press the action's key. Esc closes the menu.
 
-Settings open when configuration is absent or invalid, or audio cannot open.
-Type an exactly six-character ASCII alphanumeric callsign. Tab selects callsign,
-input, output, amplitude or TX rate. Up/Down changes devices and numeric values.
-Enter opens audio and saves the complete configuration. C-x d refreshes the device
-list; check the selections before saving. Default amplitude is 0.50 and TX rate is
-10 bit/s.
+The main screen shows conversation, composition and PTT instructions.
+`C-x o` opens settings. `C-x l` shows or hides the technical log.
+Page Up/Page Down scroll the log; End follows live output. `C-x e` exports it.
+`NO_COLOR=1` disables colors.
 
-Choose 10, 25 or 50 bit/s in settings or with C-x b while composing. RX always
-detects all three rates from the received preamble, independently of the local TX
-setting. The header shows selected TX and detected RX rates. Preparing freezes the
-text and rate; cancel preparation before changing either.
+## Files
 
-Preferences are plain text, saved through a temporary file and replacement:
+Use `C-x t`, enter a path without quotes, then follow the same Enter/PTT/Space steps.
+Files of any format are sent unchanged, including TXT, PNG and archives.
+The limit is 1 MiB per file, with a filename of up to 96 bytes.
 
-- Linux: `$XDG_CONFIG_HOME/blacksquelch/config.txt`, or
-  `$HOME/.config/blacksquelch/config.txt` when XDG_CONFIG_HOME is unset.
-- macOS: `$HOME/Library/Application Support/BlackSquelch/config.txt`.
-- Windows: `%APPDATA%\BlackSquelch\config.txt`.
+Files use 64-byte blocks. Only a complete, verified file is saved in
+`received-files/`, relative to the working directory. Names include a transfer ID
+and counter. Existing files are never overwritten. Unsupported filename characters
+become underscores; file contents stay unchanged.
 
-```text
-schema=1
-callsign=IU2ABC
-input=default
-output=default
-amplitude=0.500000
-bit_rate=10
-```
+If blocks are missing:
 
-Every listed field is required exactly once. Unknown fields, unsupported schema
-values, duplicates and incomplete files are rejected. The settings screen creates
-a complete valid file. There are no configuration migrations, legacy loaders or
-shortcut aliases. Callsigns are never padded or truncated. If saving fails, the
-screen reports it and the current audio settings remain usable for that session.
+1. The receiver uses `C-x m` to prepare a missing-block report, then sends it using PTT.
+2. After receiving the report, the sender uses `C-x r` to send only those blocks.
+3. Repeat as needed. Once saved, `C-x m` can report complete receipt.
 
-## Operator workflow
+Without a repair request, `C-x r` repeats the full retained transmission.
+The source is a snapshot: later disk edits do not change a repeat or repair.
 
-1. Compose a short message. Lowercase ASCII becomes uppercase. Unsupported bytes
-   are reported by position and value and remain editable.
-2. Press Enter or C-x s to freeze the frame and rate and inspect its duration.
-3. **Hold the radio PTT, then press Space.** A silent visual countdown lasts two seconds.
-4. **Keep PTT pressed** throughout playback and draining.
-5. Release PTT when the app says **Transmission completed — RELEASE THE RADIO PTT**,
-   or immediately when an interruption/error requests release.
+`C-x v` retries a failed save. `C-x a` discards an unsaved incoming file.
+One incoming file and the latest outgoing file are retained in memory.
+Pending transfers are lost on exit. Both stations need this version.
 
-C-x r repeats using the same PTT sequence. “TX PLAYED” marks completed local audio
-playback.
-Reception continues while composing or waiting. A received frame blocks sending
-until it ends or C-x a explicitly abandons it. A newly acquired frame also cancels
-the countdown. After local playback, queued capture and decoder state are reset.
+## Macros
 
-The log includes partial bit groups, field interpretations, provisional callsign
-and text, and verification results. Provisional text is separate from verified
-conversation entries. Input level, clipping and tone confidence are diagnostics;
-confidence is not a calibrated SNR measurement. History stays in memory unless
-C-x e exports it to a timestamped file in the working directory.
+Nine saved messages use `C-x 1` through `C-x 9`.
+They insert text into the composer; sending still uses Enter and PTT.
 
-## Offline commands
+1. Open `C-x k` and choose a slot with Up/Down.
+2. Press Enter to edit. Ctrl+U clears the message; empty means disabled.
+3. Press Ctrl+S to save all changes and return.
+
+Enter keeps an edit inside the manager. Esc cancels that edit, or discards unsaved
+manager changes. `C-x w` starts an edit from the current composition.
+Insertion adds a space when needed and refuses messages longer than 512 characters.
+
+Macros are saved in `macros.txt`, beside `config.txt`, and loaded on restart.
+Audio settings use the same folder:
+
+- Linux: `$XDG_CONFIG_HOME/blacksquelch/` or `$HOME/.config/blacksquelch/`.
+- macOS: `$HOME/Library/Application Support/BlackSquelch/`.
+- Windows: `%APPDATA%\BlackSquelch\`.
+
+## Speed
+
+Both profiles use 25 symbols/s, error correction and interleaving.
+
+| TX tones | After error correction, before packet overhead | Useful file speed |
+| --- | ---: | ---: |
+| 8 | 37.5 bit/s | 2.36 bytes/s |
+| 16 | 50 bit/s | 3.10 bytes/s |
+
+File speeds assume full 64-byte blocks, an 8-character filename and no errors.
+They include packet overhead. Longer filenames reduce them.
+
+| Content | 8 tones | 16 tones |
+| --- | ---: | ---: |
+| 100-character message | 23.52 s | 18 s |
+| 1 KiB file | 7 min 14 s | 5 min 30 s |
+| 10 KiB file | 72 min 19 s | 55 min 2 s |
+
+These are calculated audio times. Add the two-second countdown, audio delays,
+PTT turns and any repairs. Text uses six-bit character codes; files use eight-bit
+bytes. Real-radio throughput is not yet measured. Fewer lost blocks can make
+8 tones faster overall than 16.
+
+## Offline tools
+
+Optional audio fixtures for testing:
 
 ```sh
-./build/blacksquelch --frame IU2ABC 'CIAO'
-./build/blacksquelch --rate 50 --encode IU2ABC 'CIAO' message.wav
-./build/blacksquelch --decode message.wav
+./build/blacksquelch --tones 8 --frame IU2ABC 'CIAO'
+./build/blacksquelch --tones 16 --encode IU2ABC 'CIAO' message.wav
+./build/blacksquelch --tones 8 --encode-file IU2ABC image.png transmission.wav
+./build/blacksquelch --decode transmission.wav --output-dir received-files
 ```
 
-`--rate` accepts only 10, 25 or 50 and applies to `--frame`/`--encode`; its default
-is 10. Decode always detects the rate. WAV files use 48 kHz mono PCM16. Decode exits
-0 if at least one frame verified, 3 if none verified, 2 for invalid arguments, and
-1 for file/container errors. A verified frame does not validate every frame in a file.
+WAV files are not needed for live transfers. TX accepts only 8 or 16 tones;
+the old two-tone mode and `--rate` option are removed.
 
-## Protocol
-
-All profiles use 1200 Hz for 0, 2200 Hz for 1, continuous transmit phase, and 5 ms
-edge ramps. Characters use a fixed six-bit alphabet. Callsigns have exactly six
-characters and no length field; messages contain 1–512 characters.
-
-The 32-bit alternating preamble uses the selected rate. RX compares three timing
-hypotheses, locks to the preamble, and checks the exact 32-bit sync word. There is
-no rate field or negotiation. Each subsequent frame can use a different rate.
-
-`IU2ABC / CIAO` produces 160 bits with body CRC `0xAC84`:
-
-| TX rate | Preamble | CIAO audio | 100-character audio | 512-character audio |
-| --- | ---: | ---: | ---: | ---: |
-| 10 bit/s | 3.20 s | 16.00 s | 73.60 s | 320.80 s |
-| 25 bit/s | 1.28 s | 6.40 s | 29.44 s | 128.32 s |
-| 50 bit/s | 0.64 s | 3.20 s | 14.72 s | 64.16 s |
-
-The two-second PTT countdown and audio buffering are additional. These durations
-do not guarantee reception under every channel condition. CRC detects errors but
-does not correct them or authenticate a callsign. ACK, FEC, compression, addressing,
-encryption, VOX and automatic PTT are not implemented.
-
-- [Wire specification and golden vector](docs/protocol.md)
-- [Architecture, audio timing and bounded buffers](docs/architecture.md)
-- [Automated tests and real-radio validation](docs/testing.md)
-
-## Validation status
-
-Local checks pass with GCC Release and Clang AddressSanitizer/UndefinedBehaviorSanitizer:
-protocol/modem, controller/configuration, audio queues/null-device integration,
-TUI rendering and the real Linux pseudo-terminal flow (five suites). Leak checking
-was disabled in the sandbox. Windows executable and tests cross-compile with
-LLVM-MinGW/UCRT; native Windows execution and macOS compilation remain unverified
-locally. Real audio-device timing and two-radio trials are still pending.
+[Protocol](docs/protocol.md) · [Architecture](docs/architecture.md) ·
+[Tests](docs/testing.md) · [Audio library](third_party/miniaudio/README.md)

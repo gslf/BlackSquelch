@@ -7,14 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 typedef struct {
-    unsigned verified, invalid, crc_error, interrupted, progress, uncertain, acquired, bit_rate;
+    unsigned verified, invalid, crc_error, interrupted, progress, uncertain, acquired, tones;
     char call[BS_CALL_CHARS + 1], text[BS_MAX_TEXT + 1], partial[33];
 } Results;
 static void collect(void *context, const BsEvent *e) {
     Results *r = context;
-    if (e->kind == BS_RATE_DETECTED) {
+    if (e->kind == BS_MODE_DETECTED) {
         ++r->acquired;
-        r->bit_rate = e->bit_rate;
+        r->tones = e->tones;
         assert(e->symbol_ms > 0);
     }
     if (e->kind == BS_PROGRESS) {
@@ -137,8 +137,8 @@ static void test_protocol(void) {
         assert(f.count == 132 + 6 * n + padding && f.count <= BS_MAX_BITS);
         r = parse(&f);
         assert(r.verified == 1 && !strcmp(r.call, "IU2ABC") && !strcmp(r.text, text));
-        for (unsigned i = 0; i < BS_PROFILE_COUNT; ++i) {
-            assert(fabs(bs_frame_duration(&f, bs_bit_rates[i]) * bs_bit_rates[i] - f.count) < 1e-9);
+        for (unsigned i = 0; i < 2; ++i) {
+            assert(bs_frame_samples(&f, (i ? 16 : 8)) > 0);
         }
     }
     assert(padding_seen == 0x55);
@@ -168,15 +168,15 @@ static double noise(void) {
     return ((double)(random_state >> 8) / 16777216.0) * 2 - 1;
 }
 static Results channel(const char *text, double rate, double noise_level, double gain,
-                       size_t offset, int dropout, unsigned bit_rate) {
+                       size_t offset, int dropout, unsigned tones) {
     BsFrame f;
     assert(bs_frame_build(&f, "IU2ABC", text));
-    unsigned symbol = bs_symbol_samples(bit_rate);
-    size_t n = f.count * symbol;
+    unsigned symbol = BS_MFSK_SYMBOL_SAMPLES;
+    size_t n = (size_t)bs_frame_samples(&f, tones);
     int16_t *source = malloc(n * sizeof *source);
     assert(source);
     BsTransmitter tx;
-    assert(bs_tx_init(&tx, &f, 0.5, bit_rate));
+    assert(bs_tx_init(&tx, &f, 0.5, tones));
     assert(bs_tx_read(&tx, source, n) == n && bs_tx_read(&tx, source, 1) == 0);
     BsParser p;
     BsReceiver rx;
@@ -194,7 +194,7 @@ static Results channel(const char *text, double rate, double noise_level, double
                 double fraction = position - k;
                 value = (source[k] * (1 - fraction) + source[k + 1] * fraction) * gain;
                 if ((dropout == 1 && position > 100 * symbol && position < 111 * symbol) ||
-                    (dropout == 2 && position > 100.3 * symbol && position < 100.6 * symbol)) {
+                    (dropout == 2 && position > 100 * symbol && position < 106 * symbol)) {
                     value = 0;
                 }
             }
@@ -219,32 +219,32 @@ static void test_modem(void) {
                  {"clock +1000 ppm", 1.001, 0.01, 1, 2029},
                  {"clock -1000 ppm", 0.999, 0.01, 1, 369},
                  {"quiet with DC filter", 1, 0, 0.02, 11}};
-    for (unsigned profile = 0; profile < BS_PROFILE_COUNT; ++profile) {
-        unsigned bit_rate = bs_bit_rates[profile];
+    for (unsigned profile = 0; profile < 2; ++profile) {
+        unsigned tones = (profile ? 16 : 8);
         for (size_t i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
             struct Case c = cases[i];
-            Results r = channel(bs_alphabet, c.rate, c.noise, c.gain, c.offset, 0, bit_rate);
-            printf("Channel %u bit/s %-24s verified=%u locked=%u invalid=%u crc=%u\n", bit_rate,
-                   c.name, r.verified, r.bit_rate, r.invalid, r.crc_error);
+            Results r = channel(bs_alphabet, c.rate, c.noise, c.gain, c.offset, 0, tones);
+            printf("Channel %u tones %-24s verified=%u locked=%u invalid=%u crc=%u\n", tones,
+                   c.name, r.verified, r.tones, r.invalid, r.crc_error);
             fflush(stdout);
-            assert(r.verified == 1 && r.acquired == 1 && r.bit_rate == bit_rate &&
+            assert(r.verified == 1 && r.acquired == 1 && r.tones == tones &&
                    !strcmp(r.text, bs_alphabet));
         }
         char long_text[BS_MAX_TEXT + 1];
         memset(long_text, 'A', BS_MAX_TEXT);
         long_text[BS_MAX_TEXT] = 0;
-        Results r = channel(long_text, 1, 0.02, 1, 715, 0, bit_rate);
-        assert(r.verified == 1 && r.bit_rate == bit_rate);
+        Results r = channel(long_text, 1, 0.02, 1, 715, 0, tones);
+        assert(r.verified == 1 && r.tones == tones);
         for (int sign = -1; sign <= 1; sign += 2) {
-            Results drift = channel(long_text, 1 + sign * 0.0001, 0, 1, 715, 0, bit_rate);
-            printf("Long constant run %u bit/s clock %+d ppm: verified=%u\n", bit_rate, sign * 100,
+            Results drift = channel(long_text, 1 + sign * 0.001, 0, 1, 715, 0, tones);
+            printf("Long constant run %u tones clock %+d ppm: verified=%u\n", tones, sign * 1000,
                    drift.verified);
             fflush(stdout);
             assert(drift.verified == 1);
         }
-        r = channel("BRIEF FADES KEEP THEIR BIT SLOT", 1, 0, 1, 0, 2, bit_rate);
-        assert(r.verified == 1 && r.uncertain > 0);
-        r = channel("SIGNAL LOSS MUST ABORT", 1, 0, 1, 0, 1, bit_rate);
+        r = channel("BRIEF FADES KEEP THEIR BIT SLOT", 1, 0, 1, 0, 2, tones);
+        assert(r.verified == 1);
+        r = channel("SIGNAL LOSS MUST ABORT", 1, 0, 1, 0, 1, tones);
         assert(!r.verified && r.interrupted);
     }
     BsParser p;
@@ -260,12 +260,13 @@ static void test_modem(void) {
         bs_rx_read(&rx, noise_block, BS_BLOCK);
     }
     assert(!r.verified && !r.acquired && !bs_parser_active(&p));
-    puts("PASS modem: automatic rates, alphabet, noise, clipping, offsets, drift, fades and signal "
+    puts("PASS modem: automatic tone counts, alphabet, noise, clipping, offsets, drift, fades and "
+         "signal "
          "loss");
 }
-static void stream_frame(BsReceiver *rx, const BsFrame *frame, unsigned bit_rate) {
+static void stream_frame(BsReceiver *rx, const BsFrame *frame, unsigned tones) {
     BsTransmitter tx;
-    assert(bs_tx_init(&tx, frame, 0.5, bit_rate));
+    assert(bs_tx_init(&tx, frame, 0.5, tones));
     int16_t block[713];
     size_t n;
     uint64_t total = 0;
@@ -274,10 +275,10 @@ static void stream_frame(BsReceiver *rx, const BsFrame *frame, unsigned bit_rate
         bs_rx_read(rx, block, n);
         total += n;
     }
-    assert(total == frame->count * (uint64_t)bs_symbol_samples(bit_rate));
+    assert(total == bs_frame_samples(frame, tones));
 }
 static void test_rate_changes(void) {
-    const unsigned rates[] = {10, 25, 50, 10, 50, 25, 25, 10, 50};
+    const unsigned rates[] = {8, 16, 8, 8, 16, 16, 8, 16, 8};
     BsParser p;
     BsReceiver rx;
     Results r = {0};
@@ -290,27 +291,27 @@ static void test_rate_changes(void) {
         stream_frame(&rx, &f, rates[i]);
         printf("Consecutive frame %zu rate=%u verified=%u\n", i, rates[i], r.verified);
         fflush(stdout);
-        assert(r.verified == i + 1 && r.bit_rate == rates[i] && !strcmp(r.text, "AUTOMATIC RATE"));
+        assert(r.verified == i + 1 && r.tones == rates[i] && !strcmp(r.text, "AUTOMATIC RATE"));
     }
     assert(bs_frame_build(&f, "IU2ABC", "BAD SYNC"));
-    change(&f, 32, 0, 32);
-    stream_frame(&rx, &f, 50);
+    change(&f, 64, 63, 6);
+    stream_frame(&rx, &f, 16);
     unsigned verified = r.verified;
     assert(r.invalid > 0);
     assert(bs_frame_build(&f, "IU2ABC", "AFTER BAD SYNC"));
-    stream_frame(&rx, &f, 25);
-    assert(r.verified == verified + 1 && r.bit_rate == 25);
+    stream_frame(&rx, &f, 8);
+    assert(r.verified == verified + 1 && r.tones == 8);
     BsTransmitter tx;
     assert(!bs_tx_init(&tx, &f, 0.5, 0) && !bs_tx_init(&tx, &f, 0.5, 30));
-    assert(bs_symbol_samples(30) == 0 && bs_frame_duration(&f, 30) == 0);
+    assert(!bs_tx_init(&tx, &f, 0.5, 2) && bs_frame_duration(&f, 30) == 0);
     puts("PASS rate changes: mixed consecutive frames, malformed-frame recovery, invalid TX rates");
 }
 static void test_wav(void) {
     BsFrame f;
     assert(bs_frame_build(&f, "IU2ABC", "WAV TEST"));
     const char *path = "test-roundtrip.wav";
-    for (unsigned i = 0; i < BS_PROFILE_COUNT; ++i) {
-        assert(bs_wav_write(path, &f, 0.5, bs_bit_rates[i]));
+    for (unsigned i = 0; i < 2; ++i) {
+        assert(bs_wav_write(path, &f, 0.5, (i ? 16 : 8)));
         BsParser p;
         BsReceiver rx;
         Results r = {0};
@@ -318,7 +319,7 @@ static void test_wav(void) {
         bs_parser_init(&p, collect, &r);
         bs_rx_init(&rx, &p);
         assert(bs_wav_decode(path, &rx, error, sizeof error));
-        assert(r.verified == 1 && r.bit_rate == bs_bit_rates[i] && !strcmp(r.text, "WAV TEST"));
+        assert(r.verified == 1 && r.tones == (i ? 16 : 8) && !strcmp(r.text, "WAV TEST"));
         FILE *file = fopen(path, "wb");
         assert(file);
         fputs("RIFF\377\377\377\377WAVEdata", file);
@@ -327,8 +328,8 @@ static void test_wav(void) {
         remove(path);
     }
     assert(!bs_wav_write(path, &f, 0.5, 30));
-    puts(
-        "PASS WAV: all three rates auto-detected, invalid rates and malformed containers rejected");
+    puts("PASS WAV: both MFSK profiles auto-detected, invalid rates and malformed containers "
+         "rejected");
 }
 int main(void) {
     test_protocol();

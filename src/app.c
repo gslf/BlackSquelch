@@ -7,16 +7,82 @@
 static bool transmitting(const BsApp *a) {
     return a->state == BS_PLAYING || a->state == BS_DRAINING;
 }
-static unsigned next_bit_rate(unsigned rate, bool forward) {
-    for (unsigned i = 0; i < BS_PROFILE_COUNT; ++i) {
-        if (bs_bit_rates[i] == rate) {
-            return bs_bit_rates[(i + (forward ? 1 : BS_PROFILE_COUNT - 1)) % BS_PROFILE_COUNT];
+static unsigned next_tones(unsigned tones) {
+    return bs_tones_effective(tones) == 8 ? 16 : 8;
+}
+static bool planned_frame(const BsApp *a, size_t index, BsFrame *frame) {
+    return a->tx_report
+               ? bs_frame_build_repair(frame, a->frozen_call, &a->reports[index])
+               : bs_file_frame(&a->outgoing_file, a->frozen_call, a->plan_indices[index], frame);
+}
+static bool freeze_plan(BsApp *a) {
+    a->frozen_tones = bs_tones_effective(a->config.tones);
+    a->total_samples = a->total_bits = 0;
+    a->plan_position = 0;
+    BsFrame frame;
+    for (size_t i = 0; i < a->plan_count; ++i) {
+        if (!planned_frame(a, i, &frame)) {
+            return false;
         }
+        uint64_t samples = bs_frame_samples(&frame, a->frozen_tones);
+        if (!samples) {
+            return false;
+        }
+        a->total_samples += samples;
+        a->total_bits += frame.count;
     }
-    return BS_DEFAULT_BIT_RATE;
+    return a->plan_count && planned_frame(a, 0, &a->frame);
+}
+static void save_received_file(BsApp *a) {
+    char path[1200];
+    if (bs_file_save(&a->incoming_file, "received-files", path, sizeof path)) {
+        a->incoming_file.saved = true;
+        snprintf(a->file_status, sizeof a->file_status, "FILE RECEIVED: %.380s (%u bytes)", path,
+                 (unsigned)a->incoming_file.file.info.size);
+        bs_log_message(&a->log, "FILE RECEIVED", a->incoming_file.call, a->file_status);
+    } else {
+        strcpy(a->file_status, "File verified but saving failed. Check received-files directory; "
+                               "use Retry saving received file from the command menu.");
+    }
+    bs_log_add(&a->log, a->file_status);
+}
+static void receive_event(void *context, const BsEvent *event) {
+    BsApp *a = context;
+    bs_log_event(&a->log, event);
+    if (a->have_outgoing_file &&
+        bs_file_apply_report(&a->outgoing_file, a->last_file_call, event, a->requested)) {
+        a->repair_pending = !event->repair.complete;
+        if (a->repair_pending) {
+            a->last_is_file = true;
+        }
+        snprintf(a->file_status, sizeof a->file_status, "%s from %s. %s",
+                 event->repair.complete ? "Remote file receipt confirmed" : "File repair request",
+                 event->call,
+                 event->repair.complete ? "" : "Repeat prepares only requested blocks.");
+        bs_log_add(&a->log, a->file_status);
+        bs_log_message(&a->log, event->repair.complete ? "REMOTE RECEIPT" : "REPAIR REQUEST",
+                       event->call, a->file_status);
+    }
+    BsFileResult result = bs_file_accept(&a->incoming_file, event);
+    if (result == BS_FILE_COMPLETE) {
+        save_received_file(a);
+    } else if (result == BS_FILE_PROGRESS) {
+        snprintf(a->file_status, sizeof a->file_status, "Receiving %s from %s: %zu/%zu blocks",
+                 event->file.name, event->call, a->incoming_file.received,
+                 bs_file_chunk_count(event->file.size));
+        bs_log_add(&a->log, a->file_status);
+    } else if (result == BS_FILE_BUSY || result == BS_FILE_ERROR) {
+        snprintf(
+            a->file_status, sizeof a->file_status, "%s",
+            result == BS_FILE_BUSY
+                ? "Another file is pending. Save it or abort reception to accept a new file."
+                : "File metadata, duplicate data or whole-file checksum mismatch; file not saved.");
+        bs_log_add(&a->log, a->file_status);
+    }
 }
 static void settings(BsApp *a) {
     a->editing = a->config;
+    a->editing.tones = bs_tones_effective(a->config.tones);
     a->state = BS_SETTINGS;
     a->setting = 0;
     a->input_count = bs_audio_devices(true, a->inputs, BS_DEVICE_LIMIT);
@@ -33,12 +99,59 @@ static void settings(BsApp *a) {
         }
     }
 }
+static void history_add(BsApp *a, const char *text) {
+    size_t latest = (a->history_head + BS_HISTORY_COUNT - 1) % BS_HISTORY_COUNT;
+    if (!a->history_count || strcmp(a->history[latest], text)) {
+        strcpy(a->history[a->history_head], text);
+        a->history_head = (a->history_head + 1) % BS_HISTORY_COUNT;
+        if (a->history_count < BS_HISTORY_COUNT) {
+            ++a->history_count;
+        }
+    }
+    a->history_offset = 0;
+    a->history_draft[0] = 0;
+}
+static void history_key(BsApp *a, bool older) {
+    if (older) {
+        if (a->history_offset >= a->history_count) {
+            return;
+        }
+        if (!a->history_offset) {
+            strcpy(a->history_draft, a->compose);
+        }
+        ++a->history_offset;
+    } else {
+        if (!a->history_offset) {
+            return;
+        }
+        --a->history_offset;
+    }
+    if (a->history_offset) {
+        size_t index = (a->history_head + BS_HISTORY_COUNT - a->history_offset) % BS_HISTORY_COUNT;
+        strcpy(a->compose, a->history[index]);
+    } else {
+        strcpy(a->compose, a->history_draft);
+    }
+}
 static void end_transmission(BsApp *a, bool success, const char *reason) {
     snprintf(a->instruction, sizeof a->instruction, "%s - RELEASE THE RADIO PTT.%s%.450s",
              success ? "Transmission completed" : "Transmission interrupted", *reason ? " " : "",
              reason);
     bs_log_add(&a->log, a->instruction);
-    bs_log_message(&a->log, success ? "TX PLAYED" : "TX INTERRUPTED", a->config.call, a->frozen);
+    bs_log_message(&a->log, success ? "TX PLAYED" : "TX INTERRUPTED", a->frozen_call, a->frozen);
+    if (success && a->tx_file) {
+        for (size_t i = 0; i < a->plan_count; ++i) {
+            a->requested[a->plan_indices[i]] = 0;
+        }
+        a->repair_pending = false;
+        for (size_t i = 0; i < BS_FILE_BLOCKS; ++i) {
+            a->repair_pending |= a->requested[i] != 0;
+        }
+    }
+    if (success && !a->tx_file && !a->tx_report) {
+        history_add(a, a->frozen);
+        a->compose[0] = 0;
+    }
     a->state = BS_RELEASE;
     a->deadline = bs_time() + 3;
     /* Discard acoustic loopback and queued capture before reacquiring an unrelated frame. */
@@ -47,8 +160,7 @@ static void end_transmission(BsApp *a, bool success, const char *reason) {
         bs_audio_close(a->audio);
         a->audio = NULL;
     }
-    bs_parser_abort(&a->parser, "Local transmission ended");
-    bs_rx_init(&a->receiver, &a->parser);
+    bs_rx_abort(&a->receiver, "Local transmission ended");
     a->last_capture = bs_time();
 }
 static void audio_error(BsApp *a, const char *reason) {
@@ -57,7 +169,7 @@ static void audio_error(BsApp *a, const char *reason) {
     if (transmitting(a)) {
         end_transmission(a, false, copy);
     } else {
-        bs_parser_abort(&a->parser, copy);
+        bs_rx_abort(&a->receiver, copy);
         snprintf(a->instruction, sizeof a->instruction,
                  "Audio offline. RELEASE PTT IF HELD: %.390s. Reconnect in settings.", copy);
     }
@@ -65,7 +177,7 @@ static void audio_error(BsApp *a, const char *reason) {
         bs_audio_close(a->audio);
     }
     a->audio = NULL;
-    if (a->state != BS_RELEASE && a->state != BS_SETTINGS) {
+    if (a->state != BS_RELEASE && a->state != BS_SETTINGS && a->state != BS_MACROS) {
         a->state = BS_COMPOSE;
     }
 }
@@ -74,7 +186,7 @@ static void prepare(BsApp *a) {
         strcpy(a->instruction, "Open audio devices in settings before transmitting.");
         return;
     }
-    if (bs_parser_active(&a->parser)) {
+    if (bs_rx_active(&a->receiver)) {
         strcpy(a->instruction, "Receiving a frame. Wait or abort reception from the command menu.");
         return;
     }
@@ -90,22 +202,103 @@ static void prepare(BsApp *a) {
         }
         return;
     }
-    if (!bs_bit_rate_valid(a->config.bit_rate) ||
+    if (!bs_tones_valid(bs_tones_effective(a->config.tones)) ||
         !bs_frame_build(&a->frame, a->config.call, a->compose)) {
-        strcpy(a->instruction, "Callsign must contain exactly six letters/digits; TX rate must be "
-                               "10, 25 or 50. Check settings.");
+        strcpy(a->instruction, "Callsign must contain exactly six letters/digits; TX tones must be "
+                               "8 or 16. Check settings.");
         return;
     }
     strcpy(a->frozen, a->compose);
     strcpy(a->last, a->compose);
+    a->tx_file = a->last_is_file = a->tx_report = false;
+    a->plan_count = 1;
+    strcpy(a->frozen_call, a->config.call);
+    a->total_bits = a->frame.count;
     a->state = BS_WAIT;
-    a->frozen_bit_rate = a->config.bit_rate;
+    a->frozen_tones = bs_tones_effective(a->config.tones);
+    a->total_samples = bs_frame_samples(&a->frame, a->frozen_tones);
     snprintf(a->instruction, sizeof a->instruction,
-             "HOLD THE RADIO PTT, THEN PRESS SPACE. Frozen frame: %.2f seconds at %u bit/s. Esc "
+             "HOLD THE RADIO PTT, THEN PRESS SPACE. Prepared message: %.2f seconds, %u tones. Esc "
              "cancels.",
-             bs_frame_duration(&a->frame, a->frozen_bit_rate), a->frozen_bit_rate);
+             (double)a->total_samples / BS_RATE, a->frozen_tones);
     bs_log_add(&a->log, a->instruction);
 }
+static void prepare_file(BsApp *a, bool load) {
+    if (!a->audio || bs_rx_active(&a->receiver)) {
+        strcpy(a->instruction, "Audio must be ready and reception idle before preparing a file.");
+        return;
+    }
+    if (!bs_tones_valid(bs_tones_effective(a->config.tones))) {
+        strcpy(a->instruction, "Select 8 or 16 TX tones in settings.");
+        return;
+    }
+    if (!bs_normalize(a->config.call, true, NULL)) {
+        strcpy(a->instruction, "Set a valid six-character callsign before preparing a file.");
+        return;
+    }
+    if (load &&
+        !bs_file_load(&a->outgoing_file, a->file_path, a->instruction, sizeof a->instruction)) {
+        return;
+    }
+    if (load) {
+        strcpy(a->last_file_call, a->config.call);
+        memset(a->requested, 0, sizeof a->requested);
+        a->repair_pending = false;
+    }
+    strcpy(a->frozen_call, a->last_file_call);
+    a->tx_file = a->last_is_file = true;
+    a->have_outgoing_file = true;
+    a->tx_report = false;
+    a->plan_count = 0;
+    for (size_t i = 0; i < bs_file_chunk_count(a->outgoing_file.info.size); ++i) {
+        if (!a->repair_pending || a->requested[i]) {
+            a->plan_indices[a->plan_count++] = (uint16_t)i;
+        }
+    }
+    if (!freeze_plan(a)) {
+        strcpy(a->instruction, "Invalid file metadata, callsign or TX profile. Check settings.");
+        return;
+    }
+    a->tx_file_index = a->plan_indices[0];
+    a->state = BS_WAIT;
+    snprintf(a->frozen, sizeof a->frozen, "%s %s (%u bytes)",
+             a->repair_pending ? "REPAIR FILE" : "FILE", a->outgoing_file.info.name,
+             (unsigned)a->outgoing_file.info.size);
+    snprintf(a->instruction, sizeof a->instruction,
+             "HOLD THE RADIO PTT, THEN PRESS SPACE. %zu blocks of up to 64 bytes, %.1f seconds, "
+             "%u tones. Esc cancels.",
+             a->plan_count, (double)a->total_samples / BS_RATE, a->frozen_tones);
+    bs_log_add(&a->log, a->instruction);
+}
+static void prepare_report(BsApp *a) {
+    if (!a->audio || bs_rx_active(&a->receiver) || !a->incoming_file.active) {
+        return;
+    }
+    a->tx_file = false;
+    a->tx_report = true;
+    strcpy(a->frozen_call, a->config.call);
+    a->plan_count = 0;
+    size_t pages = (bs_file_chunk_count(a->incoming_file.file.info.size) + BS_REPAIR_WINDOW - 1) /
+                   BS_REPAIR_WINDOW;
+    for (size_t i = 0; i < pages; ++i) {
+        if (bs_file_report(&a->incoming_file, i, &a->reports[a->plan_count])) {
+            ++a->plan_count;
+        }
+    }
+    if (!freeze_plan(a)) {
+        strcpy(a->instruction, "Could not prepare the file reception report.");
+        return;
+    }
+    snprintf(a->frozen, sizeof a->frozen, "%s for %s",
+             a->incoming_file.complete ? "FILE RECEIPT" : "MISSING FILE BLOCKS",
+             a->incoming_file.file.info.name);
+    a->state = BS_WAIT;
+    snprintf(a->instruction, sizeof a->instruction,
+             "HOLD THE RADIO PTT, THEN PRESS SPACE. File reception report: %.1f seconds, %u tones.",
+             (double)a->total_samples / BS_RATE, a->frozen_tones);
+    bs_log_add(&a->log, a->instruction);
+}
+
 static void edit(char *text, size_t max, int key) {
     size_t n = strlen(text);
     if ((key == 8 || key == 127 || key == BS_KEY_DELETE) && n) {
@@ -118,19 +311,116 @@ static void edit(char *text, size_t max, int key) {
         text[n + 1] = 0;
     }
 }
+static void open_macros(BsApp *a, bool from_composition) {
+    a->macro_return_state = a->state;
+    a->editing_macros = a->macros;
+    a->macro_slot = 0;
+    a->macro_editing = from_composition;
+    if (from_composition) {
+        for (unsigned i = 0; i < BS_MACRO_COUNT; ++i) {
+            if (!*a->macros.text[i]) {
+                a->macro_slot = i;
+                break;
+            }
+        }
+        strcpy(a->macro_text, a->compose);
+    }
+    a->state = BS_MACROS;
+    strcpy(a->instruction, "Choose a shortcut with Up/Down; Enter edits its message. Ctrl+S saves "
+                           "all macros. Esc returns without saving.");
+}
+static bool accept_macro_text(BsApp *a) {
+    size_t bad;
+    if (*a->macro_text && !bs_normalize(a->macro_text, false, &bad)) {
+        snprintf(a->instruction, sizeof a->instruction,
+                 "Unsupported macro byte at position %zu. Use the message alphabet; empty disables "
+                 "the shortcut.",
+                 bad + 1);
+        return false;
+    }
+    strcpy(a->editing_macros.text[a->macro_slot], a->macro_text);
+    a->macro_editing = false;
+    return true;
+}
+static void macros_key(BsApp *a, int key) {
+    if (key == 19) { /* Ctrl+S is local to this screen, never a transmit command. */
+        if (a->macro_editing && !accept_macro_text(a)) {
+            return;
+        }
+        if (!*a->macros_path || !bs_macros_save(a->macros_path, &a->editing_macros)) {
+            strcpy(a->instruction, "Could not save macros. Check the preferences directory, then "
+                                   "retry Ctrl+S. Your edits are still here.");
+            return;
+        }
+        a->macros = a->editing_macros;
+        a->state = a->macro_return_state;
+        strcpy(a->instruction,
+               "Macros saved. Use the command prefix followed by 1-9 to insert a message.");
+    } else if (key == 27 || key == 7) {
+        if (a->macro_editing) {
+            a->macro_editing = false;
+            strcpy(a->instruction,
+                   "This message edit was cancelled. Ctrl+S saves other changes; Esc returns.");
+        } else {
+            a->state = a->macro_return_state;
+            strcpy(a->instruction, "Macro changes discarded.");
+        }
+    } else if (key == 13 || key == 10) {
+        if (a->macro_editing) {
+            if (accept_macro_text(a)) {
+                strcpy(a->instruction,
+                       "Message updated. Choose another shortcut or press Ctrl+S to save.");
+            }
+        } else {
+            strcpy(a->macro_text, a->editing_macros.text[a->macro_slot]);
+            a->macro_editing = true;
+            strcpy(a->instruction,
+                   "Edit this shortcut's message. Enter keeps the edit; Ctrl+U clears; "
+                   "Ctrl+S saves all; Esc cancels this edit.");
+        }
+    } else if (a->macro_editing) {
+        if (key == 21) {
+            a->macro_text[0] = 0;
+        } else {
+            edit(a->macro_text, BS_MAX_TEXT, key);
+        }
+    } else if (key == BS_KEY_UP || key == BS_KEY_BACK_TAB) {
+        a->macro_slot = (a->macro_slot + BS_MACRO_COUNT - 1) % BS_MACRO_COUNT;
+    } else if (key == BS_KEY_DOWN || key == 9) {
+        a->macro_slot = (a->macro_slot + 1) % BS_MACRO_COUNT;
+    } else if (key >= '1' && key <= '9') {
+        a->macro_slot = (unsigned)(key - '1');
+    }
+}
+static void insert_macro(BsApp *a, unsigned slot) {
+    const char *text = a->macros.text[slot];
+    size_t length = strlen(a->compose), extra = strlen(text);
+    bool space = length && extra && a->compose[length - 1] != ' ' && *text != ' ';
+    if (length + extra + space > BS_MAX_TEXT) {
+        strcpy(a->instruction,
+               "This macro would exceed 512 characters. Clear or shorten the message first.");
+        return;
+    }
+    if (space) {
+        a->compose[length++] = ' ';
+    }
+    strcpy(a->compose + length, text);
+    snprintf(a->instruction, sizeof a->instruction,
+             "Macro %u inserted. Edit the message or press Enter to prepare.", slot + 1);
+}
 static void settings_key(BsApp *a, int key) {
     if (key == 27 || key == 7) {
         a->state = BS_COMPOSE;
         strcpy(a->instruction, "Settings cancelled.");
         return;
     }
-    if (key == 9) {
-        a->setting = (a->setting + 1) % 5;
+    if (key == 9 || key == BS_KEY_BACK_TAB) {
+        a->setting = (a->setting + (key == 9 ? 1 : 4)) % 5;
         return;
     }
     if (key == 13 || key == 10) {
         if (!bs_normalize(a->editing.call, true, NULL) || !a->input_count || !a->output_count ||
-            !bs_bit_rate_valid(a->editing.bit_rate)) {
+            !bs_tones_valid(bs_tones_effective(a->editing.tones))) {
             strcpy(a->instruction,
                    "Select available audio devices and a valid six-character callsign.");
             return;
@@ -149,8 +439,7 @@ static void settings_key(BsApp *a, int key) {
         bool saved = *a->config_path && bs_config_save(a->config_path, &a->config);
         a->state = BS_COMPOSE;
         a->last_capture = bs_time();
-        bs_parser_abort(&a->parser, "Audio settings changed");
-        bs_rx_init(&a->receiver, &a->parser);
+        bs_rx_abort(&a->receiver, "Audio settings changed");
         strcpy(a->instruction, saved ? "Preferences saved. Listening; compose a short message."
                                      : "Audio ready, but preferences could not be saved.");
     } else if (a->setting == 0) {
@@ -162,7 +451,7 @@ static void settings_key(BsApp *a, int key) {
             a->editing.amplitude =
                 fmax(0.05, fmin(1, a->editing.amplitude + (key == BS_KEY_UP ? 0.05 : -0.05)));
         } else if (a->setting == 4) {
-            a->editing.bit_rate = next_bit_rate(a->editing.bit_rate, key == BS_KEY_UP);
+            a->editing.tones = next_tones(a->editing.tones);
         } else if (count) {
             *index = (*index + (key == BS_KEY_UP ? count - 1 : 1)) % count;
         }
@@ -171,12 +460,20 @@ static void settings_key(BsApp *a, int key) {
 static void cancel(BsApp *a) {
     if (transmitting(a)) {
         end_transmission(a, false, "Cancelled by operator.");
+    } else if (a->state == BS_MACROS) {
+        a->state = a->macro_return_state;
+        a->macro_editing = false;
+        strcpy(a->instruction, "Macro changes discarded.");
     } else if (a->state != BS_RELEASE) {
         a->state = BS_COMPOSE;
         strcpy(a->instruction, "Cancelled. Release PTT if held.");
     }
 }
 static void run_command(BsApp *a, char key) {
+    if (key >= '1' && key <= '9') {
+        insert_macro(a, (unsigned)(key - '1'));
+        return;
+    }
     switch (key) {
     case 'q':
         a->quit = true;
@@ -187,8 +484,28 @@ static void run_command(BsApp *a, char key) {
     case 's':
         prepare(a);
         break;
+    case 't':
+        a->state = BS_FILE_SELECT;
+        strcpy(a->instruction, "Type the path of a file (any format, max 1 MiB). Enter prepares; "
+                               "case and spaces are preserved. Esc cancels.");
+        break;
+    case 'v':
+        save_received_file(a);
+        break;
+    case 'm':
+        prepare_report(a);
+        break;
     case 'o':
         settings(a);
+        break;
+    case 'k':
+        open_macros(a, false);
+        break;
+    case 'w':
+        open_macros(a, true);
+        break;
+    case 'l':
+        a->show_log = !a->show_log;
         break;
     case 'd': {
         BsConfig editing = a->editing;
@@ -198,22 +515,21 @@ static void run_command(BsApp *a, char key) {
         break;
     }
     case 'r':
-        strcpy(a->compose, a->last);
-        prepare(a);
+        if (a->last_is_file) {
+            prepare_file(a, false);
+        } else {
+            strcpy(a->compose, a->last);
+            prepare(a);
+        }
         break;
     case 'a':
-        bs_parser_abort(&a->parser, "Reception explicitly cancelled by operator");
-        bs_rx_init(&a->receiver, &a->parser);
+        if (a->incoming_file.active && !a->incoming_file.saved) {
+            memset(&a->incoming_file, 0, sizeof a->incoming_file);
+            strcpy(a->file_status, "Pending file reception discarded.");
+        }
+        bs_rx_abort(&a->receiver, "Reception explicitly cancelled by operator");
         strcpy(a->instruction, "Local reception cancelled. Enter prepares the composed message.");
         break;
-    case 'b': {
-        a->config.bit_rate = next_bit_rate(a->config.bit_rate, true);
-        bool saved = *a->config_path && bs_config_save(a->config_path, &a->config);
-        snprintf(a->instruction, sizeof a->instruction,
-                 "TX rate: %u bit/s (%s). RX detects all three rates automatically.",
-                 a->config.bit_rate, saved ? "saved" : "session only");
-        break;
-    }
     case 'e': {
         /* Export is explicit; ordinary live logging stays memory-only. */
         char path[96];
@@ -225,9 +541,16 @@ static void run_command(BsApp *a, char key) {
         break;
     }
     case 'u':
-        a->compose[0] = 0;
+        if (a->state == BS_FILE_SELECT) {
+            a->file_path[0] = 0;
+        } else {
+            a->compose[0] = 0;
+            a->history_offset = 0;
+            a->history_draft[0] = 0;
+        }
         break;
     case 'p':
+        a->show_log = true;
         a->log.scroll += 5;
         if (a->log.scroll > a->log.count) {
             a->log.scroll = a->log.count;
@@ -254,6 +577,13 @@ static void handle_key(BsApp *a, int key) {
         return;
     }
     if (a->command_menu) {
+        size_t count = 0;
+        for (size_t i = 0; i < bs_command_count; ++i) {
+            count += bs_command_available(a, bs_commands[i].key);
+        }
+        if (a->command_scroll >= count) {
+            a->command_scroll = count ? count - 1 : 0;
+        }
         if (key == 27 || key == 7) {
             a->command_menu = false;
         } else if (key == BS_KEY_UP) {
@@ -268,10 +598,25 @@ static void handle_key(BsApp *a, int key) {
             if (a->command_scroll + 1 < available) {
                 ++a->command_scroll;
             }
-        } else if (key >= 'a' && key <= 'z' && bs_command_available(a, (char)key)) {
+        } else if (key == 13 || key == 10) {
+            size_t index = 0;
+            for (size_t i = 0; i < bs_command_count; ++i) {
+                if (bs_command_available(a, bs_commands[i].key)) {
+                    if (index++ == a->command_scroll) {
+                        a->command_menu = false;
+                        run_command(a, bs_commands[i].key);
+                        break;
+                    }
+                }
+            }
+        } else if (key >= 32 && key <= 126 && bs_command_available(a, (char)key)) {
             a->command_menu = false;
             run_command(a, (char)key);
         }
+        return;
+    }
+    if (a->state == BS_MACROS) {
+        macros_key(a, key);
         return;
     }
     if (a->state == BS_SETTINGS) {
@@ -282,12 +627,31 @@ static void handle_key(BsApp *a, int key) {
         cancel(a);
         return;
     }
+    if (a->state == BS_FILE_SELECT) {
+        if (key == 13 || key == 10) {
+            prepare_file(a, true);
+        } else {
+            size_t n = strlen(a->file_path);
+            if ((key == 8 || key == 127 || key == BS_KEY_DELETE) && n) {
+                a->file_path[n - 1] = 0;
+            } else if (key >= 32 && key <= 255 && n + 1 < sizeof a->file_path) {
+                a->file_path[n] = (char)key;
+                a->file_path[n + 1] = 0;
+            }
+        }
+        return;
+    }
+    if (a->state == BS_RELEASE && !a->tx_file && !a->tx_report &&
+        (key == BS_KEY_UP || key == BS_KEY_DOWN)) {
+        history_key(a, key == BS_KEY_UP);
+        return;
+    }
     if (transmitting(a) || a->state == BS_COUNTDOWN || a->state == BS_RELEASE) {
         return;
     }
     if (a->state == BS_WAIT) {
         if (key == ' ') {
-            if (bs_parser_active(&a->parser)) {
+            if (bs_rx_active(&a->receiver)) {
                 strcpy(a->instruction, "A frame is arriving. Release PTT and wait, or abort "
                                        "reception from the command menu.");
             } else {
@@ -297,7 +661,12 @@ static void handle_key(BsApp *a, int key) {
         }
         return;
     }
-    if (key == 13 || key == 10) {
+    if (key == BS_KEY_UP || key == BS_KEY_DOWN) {
+        history_key(a, key == BS_KEY_UP);
+    } else if (key == BS_KEY_PAGE_UP || key == BS_KEY_PAGE_DOWN || key == BS_KEY_END) {
+        a->show_log = true;
+        run_command(a, key == BS_KEY_PAGE_UP ? 'p' : key == BS_KEY_PAGE_DOWN ? 'n' : 'f');
+    } else if (key == 13 || key == 10) {
         prepare(a);
     } else {
         edit(a->compose, BS_MAX_TEXT, key);
@@ -326,7 +695,7 @@ static void tick(BsApp *a, double now) {
         }
     }
     if (a->state == BS_COUNTDOWN) {
-        if (bs_parser_active(&a->parser)) {
+        if (bs_rx_active(&a->receiver)) {
             a->state = BS_WAIT;
             strcpy(a->instruction,
                    "Reception started during countdown. Release PTT and wait; Space retries.");
@@ -335,14 +704,14 @@ static void tick(BsApp *a, double now) {
                 audio_error(a, a->audio ? bs_audio_error(a->audio) : "Audio unavailable");
                 return;
             }
-            if (!bs_tx_init(&a->transmitter, &a->frame, a->config.amplitude, a->frozen_bit_rate)) {
+            if (!bs_tx_init(&a->transmitter, &a->frame, a->config.amplitude, a->frozen_tones)) {
                 audio_error(a, "Invalid transmit rate");
                 return;
             }
             a->pending_count = a->pending_offset = 0;
             a->played = 0;
             a->last_progress = now;
-            a->deadline = now + bs_frame_duration(&a->frame, a->frozen_bit_rate) + 5;
+            a->deadline = now + (double)a->total_samples / BS_RATE + 5;
             a->state = BS_PLAYING;
             bs_log_add(&a->log, "TX audio started; keep PTT pressed");
         } else {
@@ -356,6 +725,17 @@ static void tick(BsApp *a, double now) {
                 a->pending_count = bs_tx_read(&a->transmitter, a->pending, BS_BLOCK);
                 a->pending_offset = 0;
                 if (!a->pending_count) {
+                    if ((a->tx_file || a->tx_report) && a->plan_position + 1 < a->plan_count) {
+                        ++a->plan_position;
+                        a->tx_file_index = a->tx_file ? a->plan_indices[a->plan_position] : 0;
+                        if (!planned_frame(a, a->plan_position, &a->frame) ||
+                            !bs_tx_init(&a->transmitter, &a->frame, a->config.amplitude,
+                                        a->frozen_tones)) {
+                            audio_error(a, "Cannot prepare next transfer block");
+                            return;
+                        }
+                        continue;
+                    }
                     a->state = BS_DRAINING;
                     break;
                 }
@@ -395,7 +775,7 @@ static void tick(BsApp *a, double now) {
             a->last_progress = now;
         }
         a->played = (uint64_t)played;
-        double duration = bs_frame_duration(&a->frame, a->frozen_bit_rate),
+        double duration = (double)a->total_samples / BS_RATE,
                seconds = fmin(duration, (double)a->played / BS_RATE);
         snprintf(a->instruction, sizeof a->instruction,
                  "KEEP PTT PRESSED | %.1f%% | %.1f seconds remaining | %s",
@@ -415,14 +795,17 @@ int bs_app_run(void) {
     if (!a) {
         return 1;
     }
-    bs_parser_init(&a->parser, bs_log_event, &a->log);
+    bs_parser_init(&a->parser, receive_event, a);
     bs_rx_init(&a->receiver, &a->parser);
     bool path = bs_config_path(a->config_path, sizeof a->config_path);
+    if (path && bs_macros_path(a->config_path, a->macros_path, sizeof a->macros_path)) {
+        bs_macros_load(a->macros_path, &a->macros);
+    }
     bool loaded = path && bs_config_load(a->config_path, &a->config);
     if (!loaded) {
         memset(&a->config, 0, sizeof a->config);
         a->config.amplitude = 0.5;
-        a->config.bit_rate = BS_DEFAULT_BIT_RATE;
+        a->config.tones = 8;
     }
     strcpy(a->instruction, "Listening. Compose a short message, then press Enter.");
     if (loaded) {

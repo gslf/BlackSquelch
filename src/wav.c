@@ -16,36 +16,69 @@ static bool write_le(FILE *f, uint32_t value, unsigned width) {
     }
     return true;
 }
-bool bs_wav_write(const char *path, const BsFrame *frame, double amplitude, unsigned bit_rate) {
-    if (!bs_bit_rate_valid(bit_rate)) {
+bool bs_wav_write_frames(const char *path, size_t count, BsFrameSource source, void *context,
+                         double amplitude, unsigned tones) {
+    if (!bs_tones_valid(tones) || !count || !source) {
         return false;
+    }
+    BsFrame frame;
+    uint64_t total_bytes = 0;
+    for (size_t index = 0; index < count; ++index) {
+        if (!source(context, index, &frame) || !frame.count || frame.count > BS_MAX_BITS) {
+            return false;
+        }
+        uint64_t samples = bs_frame_samples(&frame, tones);
+        if (!samples) {
+            return false;
+        }
+        total_bytes += samples * 2;
+        if (total_bytes > UINT32_MAX - 36) {
+            return false;
+        }
     }
     FILE *f = fopen(path, "wb");
     if (!f) {
         return false;
     }
-    uint32_t bytes = (uint32_t)(frame->count * bs_symbol_samples(bit_rate) * 2);
+    uint32_t bytes = (uint32_t)total_bytes;
     bool ok = fwrite("RIFF", 1, 4, f) == 4 && write_le(f, bytes + 36, 4) &&
               fwrite("WAVEfmt ", 1, 8, f) == 8 && write_le(f, 16, 4) && write_le(f, 1, 2) &&
               write_le(f, 1, 2) && write_le(f, BS_RATE, 4) && write_le(f, BS_RATE * 2, 4) &&
               write_le(f, 2, 2) && write_le(f, 16, 2) && fwrite("data", 1, 4, f) == 4 &&
               write_le(f, bytes, 4);
-    BsTransmitter tx;
-    bs_tx_init(&tx, frame, amplitude, bit_rate);
     int16_t block[BS_BLOCK];
-    size_t n;
     unsigned char packed[BS_BLOCK * 2];
-    while (ok && (n = bs_tx_read(&tx, block, BS_BLOCK))) {
-        for (size_t i = 0; i < n; ++i) {
-            packed[i * 2] = (unsigned char)block[i];
-            packed[i * 2 + 1] = (unsigned char)((uint16_t)block[i] >> 8);
+    for (size_t index = 0; ok && index < count; ++index) {
+        if (!source(context, index, &frame)) {
+            ok = false;
+            break;
         }
-        ok = fwrite(packed, 2, n, f) == n;
+        BsTransmitter tx;
+        if (!bs_tx_init(&tx, &frame, amplitude, tones)) {
+            ok = false;
+            break;
+        }
+        size_t n;
+        while (ok && (n = bs_tx_read(&tx, block, BS_BLOCK))) {
+            for (size_t i = 0; i < n; ++i) {
+                packed[i * 2] = (unsigned char)block[i];
+                packed[i * 2 + 1] = (unsigned char)((uint16_t)block[i] >> 8);
+            }
+            ok = fwrite(packed, 2, n, f) == n;
+        }
     }
     if (fclose(f)) {
         ok = false;
     }
     return ok;
+}
+static bool single_frame(void *context, size_t index, BsFrame *frame) {
+    (void)index;
+    *frame = *(const BsFrame *)context;
+    return true;
+}
+bool bs_wav_write(const char *path, const BsFrame *frame, double amplitude, unsigned tones) {
+    return bs_wav_write_frames(path, 1, single_frame, (void *)frame, amplitude, tones);
 }
 bool bs_wav_decode(const char *path, BsReceiver *rx, char *error, size_t cap) {
     FILE *f = fopen(path, "rb");
@@ -129,8 +162,8 @@ bool bs_wav_decode(const char *path, BsReceiver *rx, char *error, size_t cap) {
     ok = fmt && data && remaining == 0;
 done:
     fclose(f);
-    if (rx->parser->position) {
-        bs_parser_abort(rx->parser, "End of WAV input; incomplete frame");
+    if (bs_rx_active(rx)) {
+        bs_rx_abort(rx, "End of WAV input; incomplete frame");
     }
     if (!ok) {
         snprintf(error, cap, "%s", reason);

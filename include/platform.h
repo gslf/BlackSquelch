@@ -3,7 +3,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-enum { BS_KEY_UP = 256, BS_KEY_DOWN, BS_KEY_PAGE_UP, BS_KEY_PAGE_DOWN, BS_KEY_END, BS_KEY_DELETE };
+enum {
+    BS_KEY_UP = 256,
+    BS_KEY_DOWN,
+    BS_KEY_PAGE_UP,
+    BS_KEY_PAGE_DOWN,
+    BS_KEY_END,
+    BS_KEY_DELETE,
+    BS_KEY_BACK_TAB
+};
 double bs_time(void);
 void bs_sleep(unsigned milliseconds);
 bool bs_terminal_open(void);
