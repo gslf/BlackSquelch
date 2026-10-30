@@ -4,6 +4,30 @@ include(GNUInstallDirs)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+if(EMSCRIPTEN)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(blacksquelch_web
+        src/app.c src/commands.c src/config.c src/files.c src/macros.c src/log.c
+        src/protocol.c src/modem.c src/mfsk.c src/fec.c src/wav.c src/audio_queue.c
+        web/native/bridge.c web/native/audio.c web/native/platform.c)
+    target_include_directories(blacksquelch_web PRIVATE include src web/native)
+    target_compile_definitions(blacksquelch_web PRIVATE BS_WEB _POSIX_C_SOURCE=200809L BS_VERSION="${PROJECT_VERSION}")
+    target_compile_options(blacksquelch_web PRIVATE -Wall -Wextra -Wpedantic)
+    target_link_options(blacksquelch_web PRIVATE
+        --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createBlackSquelch
+        -sENVIRONMENT=web,worker,node -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=33554432
+        -sMAXIMUM_MEMORY=268435456 -sSTACK_SIZE=2097152 -sFILESYSTEM=1
+        "-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','ccall','UTF8ToString','HEAP16','HEAPU8']"
+        "-sEXPORTED_FUNCTIONS=['_malloc','_free','_bs_web_audio_ready','_bs_web_capture','_bs_web_output','_bs_web_ack','_bs_web_generation','_bs_web_submitted','_bs_web_transmitting','_bs_web_ending','_bs_web_audio_fault']"
+        -lidbfs.js)
+    set_target_properties(blacksquelch_web PROPERTIES OUTPUT_NAME modem SUFFIX .mjs
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/web")
+    add_custom_target(web_assets ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/web/public" "${CMAKE_BINARY_DIR}/web"
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/scripts/finalize-web.py" "${CMAKE_BINARY_DIR}/web"
+        DEPENDS blacksquelch_web)
+    return()
+endif()
 option(BS_SANITIZE "Enable address and undefined-behavior sanitizers" OFF)
 if(NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     message(FATAL_ERROR "Use GCC or Clang; on Windows use MinGW-w64 (MSYS2 UCRT64).")

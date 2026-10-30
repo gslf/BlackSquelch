@@ -4,6 +4,8 @@ import importlib.util
 import os
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -15,6 +17,22 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_offline_cache_is_stable_and_tracks_worker_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker = root / 'sw.js'
+            worker.write_text("const VERSION = '__BUILD__';\n")
+            (root / 'app.js').write_text('application v1')
+            def finalize():
+                subprocess.run([sys.executable, str(ROOT / 'scripts/finalize-web.py'), str(root)],
+                               check=True, stdout=subprocess.DEVNULL)
+                return worker.read_text()
+            first = finalize()
+            self.assertNotIn('__BUILD__', first)
+            self.assertEqual(finalize(), first)
+            worker.write_text(first + '// New caching behavior\n')
+            self.assertNotEqual(finalize().splitlines()[0], first.splitlines()[0])
+
     def test_tags(self):
         version = release.project_version()
         self.assertEqual(release.validate_tag("v" + version), version)
@@ -50,13 +68,12 @@ class ReleaseTests(unittest.TestCase):
             output = Path(directory)
             with self.assertRaisesRegex(ValueError, "Missing release target"):
                 release.prepare_assets(output)
-            for target in release.TARGETS:
-                name = release.asset_name(*target)
+            for name in [release.asset_name(*target) for target in release.TARGETS] + ['blacksquelch-web.zip']:
                 (output / name).write_bytes(b"test archive")
                 (output / (name + ".sha256")).write_text(f"{release.sha256(output / name)}  {name}\n")
             release.prepare_assets(output)
             lines = (output / "checksums.sha256").read_text().splitlines()
-            self.assertEqual(len(lines), 7)
+            self.assertEqual(len(lines), 8)
             for line in lines:
                 digest, name = line.split("  ")
                 self.assertEqual(digest, release.sha256(output / name))

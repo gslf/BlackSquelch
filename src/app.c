@@ -790,11 +790,8 @@ static void tick(BsApp *a, double now) {
         a->state = BS_COMPOSE;
     }
 }
-int bs_app_run(void) {
-    BsApp *a = calloc(1, sizeof *a);
-    if (!a) {
-        return 1;
-    }
+void bs_app_init(BsApp *a) {
+    memset(a, 0, sizeof *a);
     bs_parser_init(&a->parser, receive_event, a);
     bs_rx_init(&a->receiver, &a->parser);
     bool path = bs_config_path(a->config_path, sizeof a->config_path);
@@ -818,6 +815,25 @@ int bs_app_run(void) {
         }
         settings(a);
     }
+    a->last_capture = bs_time();
+}
+void bs_app_step(BsApp *a, double now) { tick(a, now); }
+void bs_app_key(BsApp *a, int key) { handle_key(a, key); }
+bool bs_app_command(BsApp *a, char key) {
+    if (!bs_command_available(a, key)) {
+        return false;
+    }
+    run_command(a, key);
+    return true;
+}
+void bs_app_audio_failed(BsApp *a, const char *reason) { audio_error(a, reason); }
+#ifndef BS_WEB
+int bs_app_run(void) {
+    BsApp *a = calloc(1, sizeof *a);
+    if (!a) {
+        return 1;
+    }
+    bs_app_init(a);
     if (!bs_terminal_open()) {
         fprintf(stderr,
                 "An interactive ANSI terminal is required. Use --help for offline commands.\n");
@@ -834,7 +850,7 @@ int bs_app_run(void) {
             if (key < 0) {
                 break;
             }
-            handle_key(a, key);
+            bs_app_key(a, key);
             if (a->quit) {
                 break;
             }
@@ -842,7 +858,7 @@ int bs_app_run(void) {
         if (a->quit || bs_quit_requested()) {
             break;
         }
-        tick(a, now);
+        bs_app_step(a, now);
         if (now - a->last_render >= 0.05) {
             bs_tui_render(a);
             a->last_render = now;
@@ -863,3 +879,4 @@ int bs_app_run(void) {
     free(a);
     return 0;
 }
+#endif

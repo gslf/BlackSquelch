@@ -1,0 +1,39 @@
+name: Publish browser app
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    uses: ./.github/workflows/web.yml
+    with:
+      ref: ${{ github.sha }}
+
+  deploy:
+    needs: web
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-web
+          path: dist
+      - name: Extract website
+        run: python3 -m zipfile -e dist/blacksquelch-web.zip site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/blacksquelch-web
+      - uses: actions/deploy-pages@v4
+        id: deployment

@@ -1,0 +1,62 @@
+name: Browser app
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact release commit
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned WebAssembly build tools
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 4.0.20
+          "$RUNNER_TEMP/emsdk/emsdk" activate 4.0.20
+      - name: Build native and browser versions
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+          emcmake cmake -S . -B build/wasm -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/wasm --parallel
+      - name: Test audio, native interoperability and browser UI
+        env:
+          CHROMIUM: google-chrome
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          node tests/test_web_audio.mjs
+          node tests/test_web_wasm.mjs build/wasm/web build/blacksquelch
+          node tests/test_web_browser.mjs build/wasm/web
+      - name: Package static PWA
+        run: python scripts/package-web.py build/wasm/web --output-dir dist
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-web
+          path: dist/*
+          if-no-files-found: error
+      - name: Save browser screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: browser-test-screenshots
+          path: build/web-tests/
+          if-no-files-found: ignore

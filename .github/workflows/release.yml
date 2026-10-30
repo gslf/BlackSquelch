@@ -108,8 +108,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  web:
+    needs: prepare
+    uses: ./.github/workflows/web.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit }}
+
   publish:
-    needs: [prepare, build]
+    needs: [prepare, build, web]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

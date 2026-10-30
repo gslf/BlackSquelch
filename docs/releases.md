@@ -22,10 +22,13 @@ The workflow builds these archives:
 | Linux | x86_64 / ARM64 | `blacksquelch-linux-<arch>.tar.gz` |
 | macOS | x86_64 / ARM64 | `blacksquelch-macos-<arch>.tar.gz` |
 | Windows | x86_64 | `blacksquelch-windows-x86_64.zip` |
+| Browser | WebAssembly | `blacksquelch-web.zip` |
 
 Linux builds on Ubuntu 22.04. macOS targets 13+ and uses an ad-hoc signature;
 Developer ID signing and notarization are not configured. Windows bundles its MinGW
-runtime DLLs. Every archive includes offline install and uninstall scripts.
+runtime DLLs. Native archives include offline install and uninstall scripts.
+The browser ZIP contains a complete static PWA; serve it over HTTPS or localhost.
+Its build must also pass native interoperability and browser integration tests.
 
 The release also includes download installers, `checksums.sha256` and generated
 release notes. Publication uses GitHub's built-in token; no extra secret is needed.

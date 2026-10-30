@@ -64,6 +64,12 @@ typedef struct {
 extern const BsCommand bs_commands[];
 extern const size_t bs_command_count;
 bool bs_command_available(const BsApp *app, char key);
+/* Shared event-driven controller used by the terminal and WebAssembly frontends. */
+void bs_app_init(BsApp *app);
+void bs_app_step(BsApp *app, double now);
+void bs_app_key(BsApp *app, int key);
+bool bs_app_command(BsApp *app, char key);
+void bs_app_audio_failed(BsApp *app, const char *reason);
 int bs_app_run(void);
 size_t bs_tui_format(const BsApp *app, unsigned columns, unsigned rows, bool color, char *output,
                      size_t capacity);

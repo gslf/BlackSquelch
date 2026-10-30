@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f0">
+  <meta name="description" content="Text and files over analog radio. The BlackSquelch modem, in your browser and offline.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./style.css">
+  <title>BlackSquelch · Radio terminal</title>
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+<svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+  <symbol id="wave" viewBox="0 0 24 24"><path d="M3 10v4m4-8v12m5-16v20m5-16v12m4-8v4"/></symbol>
+  <symbol id="settings-icon" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M8 4v6m8 4v6"/></symbol>
+  <symbol id="file-icon" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8zm0 0v5h5M8 13h8m-8 4h5"/></symbol>
+  <symbol id="arrow-icon" viewBox="0 0 24 24"><path d="m5 12 14 0m-6-6 6 6-6 6"/></symbol>
+  <symbol id="download-icon" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+  <symbol id="close-icon" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+</defs></svg>
+<div class="app-shell">
+  <header class="masthead">
+    <a class="brand" href="./" aria-label="BlackSquelch home"><span class="brand-mark"><svg><use href="#wave"/></svg></span><span>BlackSquelch<small>THE OPEN RADIO TERMINAL</small></span></a>
+    <div class="header-actions">
+      <span class="offline-badge" id="offline" hidden>Offline</span>
+      <button id="install" aria-label="Install BlackSquelch" class="button quiet" hidden><svg><use href="#download-icon"/></svg><span>Install app</span></button>
+      <button id="settings-open" aria-label="Station settings" class="button quiet" disabled><svg><use href="#settings-icon"/></svg><span>Settings</span></button>
+    </div>
+  </header>
+  <main>
+    <div class="page-title"><div><p class="eyebrow">YOUR STATION, ANYWHERE</p><h1>A little signal.<br class="mobile-break"> A real connection.</h1></div><span class="local-label"><span class="status-dot"></span>Local processing · no server</span></div>
+    <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="notice-close" aria-label="Dismiss notice">×</button></div>
+    <div id="update-notice" class="notice" hidden><span>An app update is ready. Stop audio before updating.</span><button id="update" class="button small">Update</button></div>
+    <div class="workspace">
+      <section class="conversation card" aria-labelledby="conversation-title">
+        <div class="section-heading"><h2 id="conversation-title">On the air</h2><span class="pill" id="connection-status">Loading modem</span></div>
+        <div id="conversation" class="messages" role="log" aria-live="polite" aria-relevant="additions text">
+          <div class="empty-state"><div class="signal-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><h3>A quiet frequency. For now.</h3><p>Start audio to listen. Your next connection<br>could be just a message away.</p><span class="tiny-label">MFSK8 / MFSK16 · FEC · AUTO RECEIVE</span></div>
+        </div>
+        <div class="conversation-footer"><span><span class="status-dot" id="rx-dot"></span><span id="rx-status">Starting WebAssembly…</span></span><button class="text-button" id="log-open" disabled>Technical log <span aria-hidden="true">↗</span></button></div>
+      </section>
+      <aside class="station card" aria-labelledby="station-title">
+        <div class="section-heading"><h2 id="station-title">Your station</h2><span class="tiny-label">MANUAL PTT</span></div>
+        <div class="callsign" id="station-call">------</div><p class="station-subtitle" id="station-description">Set your callsign to get started</p>
+        <div class="station-metrics"><div><span class="label">TRANSMIT</span><strong id="tx-profile">8 tones</strong></div><div><span class="label">RECEIVE</span><strong>Automatic</strong></div></div>
+        <label class="meter-label" for="input-level">Input level <span id="input-level-value">0%</span></label><meter id="input-level" min="0" max="1" low="0.03" high="0.85" optimum="0.3" value="0">0</meter>
+        <button id="audio-toggle" class="button primary full" disabled><svg><use href="#wave"/></svg><span>Start audio</span></button>
+        <p class="station-hint">Connect your radio’s audio.<br>PTT stays in your hands.</p>
+        <div class="station-bottom"><button id="macros-open" class="text-button" disabled>Message macros <span>↗</span></button><button id="commands-open" class="text-button" disabled>All actions <span>↗</span></button></div>
+      </aside>
+      <section class="composer card" aria-labelledby="compose-title">
+        <div class="section-heading"><h2 id="compose-title">Send a message</h2><div class="history-controls"><button id="history-up" class="icon-button" aria-label="Recall older sent message" disabled>↑</button><button id="history-down" class="icon-button" aria-label="Recall newer sent message or draft" disabled>↓</button><span id="character-count">0 / 512</span></div></div>
+        <label for="message" class="sr-only">Message to send</label><textarea id="message" maxlength="512" rows="3" placeholder="Your message starts here…" spellcheck="false" autocapitalize="characters" aria-describedby="message-help" disabled></textarea>
+        <div class="attachment" id="attachment" hidden><svg><use href="#file-icon"/></svg><span id="attachment-name"></span><button id="attachment-remove" class="icon-button" aria-label="Remove attached file">×</button></div>
+        <div class="composer-actions"><div><input id="file-picker" type="file" hidden><button id="attach-file" class="button quiet" disabled><svg><use href="#file-icon"/></svg>Attach file</button><button id="clear" class="text-button" disabled>Clear</button></div><button id="prepare" class="button primary" disabled>Prepare message <svg><use href="#arrow-icon"/></svg></button></div>
+        <p class="field-hint" id="message-help">Text or any file up to 1 MiB. Enter prepares; nothing transmits until you confirm.</p>
+        <p id="operator-status" class="operator-status" role="status"></p><div class="tx-panel" id="tx-panel" hidden><p class="eyebrow" id="tx-label">READY TO TRANSMIT</p><p id="tx-content" class="tx-content"></p><p id="tx-instruction" role="status"></p><progress id="tx-progress" max="1" value="0" aria-label="Transmission progress"></progress><div><button id="transmit" class="button primary">I’m holding PTT · Start audio</button><button id="cancel-tx" class="button danger">Cancel</button></div></div>
+      </section>
+      <section class="received card" aria-labelledby="received-title"><div class="section-heading"><h2 id="received-title">Received files</h2><svg class="muted"><use href="#download-icon"/></svg></div><div id="incoming" hidden><p id="incoming-name"></p><progress id="incoming-progress" max="1" value="0" aria-label="File reception progress"></progress><p id="incoming-status" class="field-hint"></p></div><p id="file-status" class="field-hint"></p><div id="received-files"><p class="muted empty-files">Verified files will appear here.<br>Only complete files can be downloaded.</p></div><div class="file-actions"><button class="text-button" id="report" disabled>Report / request blocks</button><button class="text-button" id="retry-save" disabled>Retry save</button><button class="text-button danger-text" id="abort-rx" disabled>Abort reception</button></div></section>
+    </div>
+    <section id="log-panel" class="card log-panel" aria-labelledby="log-title" hidden><div class="section-heading"><h2 id="log-title">Technical log</h2><div><button data-command="p" class="text-button">Older</button><button data-command="n" class="text-button">Newer</button><button data-command="f" class="text-button">Follow live</button><button id="export-log" class="text-button">Export</button><button id="log-close" class="icon-button" aria-label="Close technical log">×</button></div></div><pre id="technical-log" tabindex="0" aria-label="Technical log entries"></pre></section>
+    <footer class="page-footer"><span>Built for the airwaves.</span><span>8 / 16 tones <span class="separator">/</span> 25 baud <span class="separator">/</span> <span id="app-version">WebAssembly</span></span></footer>
+  </main>
+</div>
+<dialog id="settings-dialog" aria-labelledby="settings-title"><form id="settings-form"><div class="dialog-heading"><div><p class="eyebrow">MAKE YOURSELF HEARD</p><h2 id="settings-title">Station settings</h2></div><button type="button" class="icon-button" data-close="settings-dialog" aria-label="Close settings">×</button></div><label for="callsign">Callsign</label><input id="callsign" maxlength="6" minlength="6" pattern="[A-Za-z0-9]{6}" placeholder="IU2ABC" autocapitalize="characters" autocomplete="off" required><p class="field-hint">Exactly six letters or digits.</p><div class="form-grid"><div><label for="tones">Transmit profile</label><select id="tones"><option value="8">MFSK8 · 8 tones</option><option value="16">MFSK16 · 16 tones</option></select></div><div><label for="output-level">Output level <output id="output-value">50%</output></label><input id="output-level" type="range" min="5" max="100" step="5" value="50"></div></div><label for="input-device">Microphone / radio input</label><select id="input-device"><option value="default">Default microphone</option></select><label for="output-device">Speaker / radio output</label><select id="output-device"><option value="default">Default speaker</option></select><p id="output-help" class="field-hint">Device names appear after microphone permission. Unsupported output selection uses your system speaker.</p><button type="button" id="refresh-devices" class="text-button">Refresh audio devices</button><p class="dialog-note">Reception detects both profiles automatically. Keep this app visible while using radio audio. Headphones or a radio interface prevent acoustic feedback.</p><div class="dialog-actions"><button type="button" class="button quiet" data-close="settings-dialog">Cancel</button><button id="save-settings" type="submit" class="button primary">Save & start audio</button></div></form></dialog>
+<dialog id="macros-dialog" aria-labelledby="macros-title"><form id="macros-form"><div class="dialog-heading"><div><p class="eyebrow">LESS TYPING. MORE TALKING.</p><h2 id="macros-title">Message macros</h2></div><button type="button" class="icon-button" data-close="macros-dialog" aria-label="Close macros">×</button></div><p class="field-hint">Use the buttons below, or Ctrl+X then 1–9. Macros insert text; they never transmit automatically. Leave a slot empty to disable it.</p><div id="macro-fields"></div><div class="dialog-actions"><button type="button" class="button quiet" data-close="macros-dialog">Cancel</button><button type="submit" class="button primary">Save macros</button></div></form></dialog>
+<dialog id="commands-dialog" aria-labelledby="commands-title"><div class="dialog-heading"><div><p class="eyebrow">EVERYTHING AT HAND</p><h2 id="commands-title">All actions</h2></div><button class="icon-button" data-close="commands-dialog" aria-label="Close actions">×</button></div><p class="field-hint">Keyboard: Ctrl+X, release, then the action key. Esc cancels. Up/Down recalls sent messages.</p><div id="commands"></div></dialog>
+<dialog id="install-dialog" aria-labelledby="install-title"><div class="dialog-heading"><h2 id="install-title">Install BlackSquelch</h2><button class="icon-button" data-close="install-dialog" aria-label="Close installation help">×</button></div><p id="install-help">Use your browser’s Install app or Add to Home Screen command. Installation is supported by current Chromium browsers and Safari on iPhone and iPad; other browsers may not offer it.</p><p class="field-hint">The app stays on your device and opens offline after its first complete load. Microphone permission is still required for radio audio.</p></dialog>
+<noscript><p class="notice">Enable JavaScript and WebAssembly to use BlackSquelch in your browser. The native terminal version is also available.</p></noscript>
+</body>
+</html>

@@ -63,3 +63,20 @@ are rejected. Only 8 and 16 tones are supported.
 The command table drives both menu entries and keyboard actions. The screen
 redraws changed rows only, sanitizes external text and adapts to small terminals.
 The technical log is hidden by default. Normal exits restore terminal settings.
+
+## Browser
+
+The WebAssembly target compiles the same `src/app.c`, modem, FEC, protocol, files,
+macros and logs. A small C bridge exposes commands and a JSON snapshot. Native audio
+and terminal code are replaced by browser adapters; radio formats are unchanged.
+
+The DOM frontend uses standard HTML, CSS and JavaScript. A worker owns the C session
+and its virtual filesystem. IndexedDB stores preferences, macros and complete files.
+An AudioWorklet exchanges raw PCM directly with the worker over a MessageChannel,
+keeping the interface out of the audio path. Bounded queues, generation IDs and played
+sample acknowledgements reject stale audio and detect underruns. Completion also
+waits for output latency. Device clocks are resampled to the modem's 48 kHz clock.
+
+A versioned service worker caches the complete static build. Updates require an
+explicit action with audio stopped. No server API, external runtime dependency,
+SharedArrayBuffer or cross-origin isolation is required.

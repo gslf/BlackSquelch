@@ -141,7 +141,7 @@ def package(build_dir, output_dir, platform, arch, runtime_dir=None):
 
 
 def prepare_assets(directory):
-    names = [asset_name(*target) for target in TARGETS]
+    names = [asset_name(*target) for target in TARGETS] + ['blacksquelch-web.zip']
     for name in names:
         archive = directory / name
         checksum = directory / (name + ".sha256")

@@ -44,6 +44,24 @@ runtime DLL dependencies, installation, updates and removal. They also test
 automatic downloads and checksum rejection without a network. Windows checks rollback
 after a failed update and runs the installed executable without MinGW on PATH.
 
+## Browser app
+
+Build the native and WebAssembly targets first. Node 24+ runs the web tests without
+installing packages. The browser test also needs Chromium or Google Chrome.
+
+```sh
+node tests/test_web_audio.mjs
+node tests/test_web_wasm.mjs build/wasm/web build/blacksquelch
+node tests/test_web_browser.mjs build/wasm/web
+```
+
+Set `CHROMIUM` if the browser executable has another name. Tests cover sample-rate
+conversion, buffer faults, both native/browser directions, 64-byte binary transfers,
+selective repair, real AudioWorklet playback with simulated microphone input, history,
+macro persistence, mobile layouts, offline reopening and installed-mode visibility.
+Screenshots are saved in `build/web-tests/`. Real iOS/Android hardware and radio
+interfaces still need operator checks.
+
 ## Memory checks
 
 ```sh

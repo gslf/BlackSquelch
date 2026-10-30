@@ -51,6 +51,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\
 For a custom location, run its installed uninstall script. Preferences, macros and
 received files are kept.
 
+## Browser app
+
+The same modem is also available as a responsive, installable PWA, with text,
+files, selective repair, history, macros and logs. It works offline after the first
+complete load and interoperates with the terminal version. No account or external
+runtime dependency is needed.
+
+Extract `blacksquelch-web.zip` from the release, then run:
+
+```sh
+python3 -m http.server 8080 --directory blacksquelch-web
+```
+
+Open `http://localhost:8080`, or host the folder over HTTPS for phones and other
+computers. Tap Settings to start audio. Install app appears in browser mode and is
+hidden in the installed app. Keep the app visible while using radio audio.
+
+[Browser setup, building and hosting](docs/web.md).
+
 ## Build
 
 Requires GCC or Clang, CMake 3.20+, and Make. Audio dependencies are included.
