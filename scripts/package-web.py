@@ -13,7 +13,9 @@ args = parser.parse_args()
 root = args.directory.resolve()
 required = ('index.html', 'app.js', 'worker.js', 'audio.js', 'audio-worklet.js',
             'modem.mjs', 'modem.wasm', 'sw.js', 'manifest.webmanifest', 'style.css',
-            'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png')
+            'icons/icon.svg', 'icons/icon-32.png', 'icons/icon-192.png', 'icons/icon-512.png',
+            'icons/maskable-512.png', 'icons/apple-touch-icon.png',
+            'screenshots/wide.png', 'screenshots/narrow.png')
 for name in required:
     if not (root / name).is_file():
         parser.exit(1, f'Missing web asset: {name}\n')

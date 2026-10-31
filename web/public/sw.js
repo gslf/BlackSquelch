@@ -2,7 +2,7 @@
 const VERSION = '__BUILD__';
 const PREFIX = `blacksquelch:${self.registration.scope}:`;
 const CACHE = PREFIX + VERSION;
-const ASSETS = ['./', './index.html', './style.css', './app.js', './audio.js', './audio-worklet.js', './worker.js', './modem.mjs', './modem.wasm', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png'];
+const ASSETS = ['./', './index.html', './style.css', './app.js', './audio.js', './audio-worklet.js', './worker.js', './modem.mjs', './modem.wasm', './manifest.webmanifest', './icons/icon.svg', './icons/icon-32.png', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS.map(path => new Request(path, {cache: 'reload'})))));
 });

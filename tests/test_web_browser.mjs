@@ -59,6 +59,14 @@ try {
   await page.call('Page.navigate',{url:origin+'/'});
   await page.wait('document.getElementById("audio-toggle")?.disabled === false');
   await page.wait('navigator.serviceWorker.controller !== null');
+  // Chromium's own check behind its install prompt, then every manifest image at its declared size.
+  assert.deepEqual((await page.call('Page.getInstallabilityErrors')).installabilityErrors,[]);
+  // A relative manifest id resolves against the origin, not the folder: "./" would make every app on the site one app.
+  assert.equal((await page.call('Page.getAppId')).appId,origin+'/blacksquelch');
+  assert.equal(await page.evaluate(`(async()=>{const link=document.querySelector('link[rel=manifest]').href;const manifest=await(await fetch(link)).json();
+    const checks=[...manifest.icons,...manifest.screenshots].map(item=>new Promise(resolve=>{const image=new Image();
+      image.onload=()=>resolve(item.sizes===image.naturalWidth+'x'+image.naturalHeight);image.onerror=()=>resolve(false);image.src=new URL(item.src,link).href;}));
+    return manifest.screenshots.some(item=>item.form_factor==='wide')&&manifest.screenshots.some(item=>item.form_factor!=='wide')&&(await Promise.all(checks)).every(Boolean);})()`),true,'Manifest icons or screenshots are missing or mis-sized');
   // Install app starts the browser's prompt. A prompt works once: without another, Chromium has nothing to start and hides the button.
   await page.evaluate(`{const event=new Event('beforeinstallprompt',{cancelable:true});window.__installPrompts=0;
     event.prompt=async()=>{window.__installPrompts++;};event.userChoice=Promise.resolve({outcome:'dismissed'});dispatchEvent(event);}`);

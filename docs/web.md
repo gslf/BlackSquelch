@@ -84,8 +84,10 @@ python3 scripts/package-web.py build/wasm/web
 ```
 
 Upload the generated folder to any HTTPS static host, including a subdirectory.
-The server must serve `.wasm` as `application/wasm` and JavaScript as JavaScript.
-No special cross-origin isolation headers are required.
+The server must serve `.wasm` as `application/wasm` and JavaScript, including `.mjs`,
+as JavaScript. No special cross-origin isolation headers are required.
+The manifest id is `blacksquelch`, so the installed app stays separate from other
+installable apps on the same origin.
 
 Regular pushes produce a downloadable artifact. Releases also include the static
 PWA ZIP and its checksum. These workflows do not deploy a website.
