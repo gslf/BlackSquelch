@@ -65,8 +65,9 @@ python3 -m http.server 8080 --directory blacksquelch-web
 ```
 
 Open `http://localhost:8080`, or host the folder over HTTPS for phones and other
-computers. Tap Settings to start audio. Install app appears in browser mode and is
-hidden in the installed app. Keep the app visible while using radio audio.
+computers. Tap Settings to start audio. Install app opens the browser's installation
+prompt in Chromium browsers and shows the steps in Safari; it is hidden where installation
+is unavailable and in the installed app. Keep the app visible while using radio audio.
 
 [Browser setup, building and hosting](docs/web.md).
 

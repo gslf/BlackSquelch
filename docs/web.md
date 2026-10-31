@@ -44,9 +44,11 @@ clearing browser data removes local storage. Storage failures are shown explicit
 
 ## Install
 
-Tap Install app. Chromium browsers show an installation prompt when available.
-On iPhone or iPad, Safari uses Share → Add to Home Screen. The install button is
-hidden in the installed app. Some browsers do not support installation.
+Install app appears only where it can install. In Chromium browsers (Chrome, Edge,
+Samsung Internet and others, on desktop and Android) it opens the browser's own
+installation prompt, once the browser offers one. Safari has no installation API:
+on iPhone and iPad the button shows Share → Add to Home Screen, on a Mac (Safari 17+)
+File → Add to Dock. Browsers that cannot install, and the installed app, hide it.
 
 After the first complete load, the app opens offline. Updates wait until you stop
 audio and choose Update; an update never interrupts an active transmission.

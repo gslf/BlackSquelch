@@ -354,18 +354,25 @@ window.addEventListener('beforeunload', event => {
 
 const displayModes = ['standalone', 'minimal-ui', 'fullscreen'].map(mode => matchMedia(`(display-mode: ${mode})`));
 function installed() { return navigator.standalone === true || displayModes.some(query => query.matches); }
-function installVisibility() { $('install').hidden = installed() || !registration; }
+// Chromium browsers, desktop and Android, start installation from their own prompt (beforeinstallprompt).
+// Safari has no such API: on iPhone, iPad and Mac the button can only show the steps.
+const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const safariMac = !ios && /Macintosh/.test(navigator.userAgent) && Number(navigator.userAgent.match(/Version\/(\d+).*Safari/)?.[1]) >= 17;
+const installSteps = ios ? 'Tap Share, choose Add to Home Screen, then tap Add. Open BlackSquelch from its new Home Screen icon.'
+  : safariMac ? 'In Safari, choose File, then Add to Dock. Open BlackSquelch from the Dock or Launchpad.' : null;
+// Shown only when a click can install: no prompt and no steps means this browser cannot.
+function installVisibility() { $('install').hidden = installed() || !registration || !(deferredInstall || installSteps); }
 for (const mode of displayModes) mode.addEventListener('change', installVisibility);
 window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); deferredInstall = event; installVisibility(); });
-window.addEventListener('appinstalled', () => { deferredInstall = undefined; $('install').hidden = true; });
+window.addEventListener('appinstalled', () => { deferredInstall = undefined; installVisibility(); });
 $('install').onclick = async () => {
   if (installed()) return;
   if (deferredInstall) {
-    const prompt = deferredInstall; deferredInstall = undefined;
+    // A prompt works once; the browser announces a new one if it offers installation again.
+    const prompt = deferredInstall; deferredInstall = undefined; installVisibility();
     try { await prompt.prompt(); await prompt.userChoice; } catch (error) { notice(`Installation could not start: ${error.message}`); }
-  } else {
-    if (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
-      $('install-help').textContent = 'In Safari, open Share, choose Add to Home Screen, then tap Add. Open BlackSquelch from its new Home Screen icon.';
+  } else if (installSteps) {
+    $('install-help').textContent = installSteps;
     showDialog('install-dialog');
   }
 };

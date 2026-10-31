@@ -59,7 +59,13 @@ try {
   await page.call('Page.navigate',{url:origin+'/'});
   await page.wait('document.getElementById("audio-toggle")?.disabled === false');
   await page.wait('navigator.serviceWorker.controller !== null');
+  // Install app starts the browser's prompt. A prompt works once: without another, Chromium has nothing to start and hides the button.
+  await page.evaluate(`{const event=new Event('beforeinstallprompt',{cancelable:true});window.__installPrompts=0;
+    event.prompt=async()=>{window.__installPrompts++;};event.userChoice=Promise.resolve({outcome:'dismissed'});dispatchEvent(event);}`);
   await page.wait('!document.getElementById("install").hidden');
+  await page.evaluate('document.getElementById("install").click()');
+  await page.wait('window.__installPrompts === 1 && document.getElementById("install").hidden');
+  assert.equal(await page.evaluate('document.getElementById("install-dialog").open'),false);
   assert.equal(await page.evaluate('document.querySelectorAll("script[src^=http],link[href^=http]").length'),0);
   assert.equal(await page.evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
   await page.evaluate('document.getElementById("audio-toggle").click()');
